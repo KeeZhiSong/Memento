@@ -42,3 +42,5 @@ next-env.d.ts
 
 # Large source animation files
 Dog Animation/
+
+package-lock.json
