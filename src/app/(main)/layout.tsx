@@ -1,0 +1,24 @@
+import TopNavBar from "@/components/navigation/TopNavBar";
+import AvatarStateMachineProvider from "@/components/avatar/AvatarStateMachine";
+import { BackgroundProvider } from "@/hooks/useBackground";
+import { AvatarProvider } from "@/hooks/useAvatar";
+import { LanguageProvider } from "@/hooks/useLanguage";
+
+export default function MainLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <LanguageProvider>
+      <BackgroundProvider>
+        <AvatarProvider>
+          <AvatarStateMachineProvider>
+            <TopNavBar />
+            {children}
+          </AvatarStateMachineProvider>
+        </AvatarProvider>
+      </BackgroundProvider>
+    </LanguageProvider>
+  );
+}
