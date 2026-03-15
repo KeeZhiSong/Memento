@@ -228,7 +228,7 @@ export default function RemindersPage() {
   };
 
   return (
-    <div className="min-h-screen bg-cream-50 pt-24 px-3 pb-24 overflow-y-auto">
+    <div className="h-screen bg-cream-50 pt-24 px-3 pb-24 overflow-y-auto">
       <div className="glass-heavy rounded-2xl p-6 w-[80vw] max-w-5xl mx-auto space-y-6">
         <h1 className="text-2xl font-bold text-navy">{t("reminders.title")}</h1>
 
@@ -311,9 +311,7 @@ export default function RemindersPage() {
             type="submit"
             disabled={!isSaveEnabled}
             className={`rounded-lg px-4 py-2 text-sm font-semibold text-white ${
-              isSaveEnabled
-                ? "bg-warm-pink hover:bg-pink-600"
-                : "bg-navy/30 cursor-not-allowed"
+              isSaveEnabled ? "bg-pink-600" : "bg-navy/30 cursor-not-allowed"
             }`}
           >
             Save Reminder
@@ -338,8 +336,8 @@ export default function RemindersPage() {
             editingReminderId={editingReminderId}
             editTitle={editTitle}
             editDueAt={editDueAt}
-            editRecurringPattern={recurringPattern}
-            editRecurringTime={recurringTime}
+            editRecurringPattern={editRecurringPattern}
+            editRecurringTime={editRecurringTime}
             onEditTitle={setEditTitle}
             onEditDueAt={setEditDueAt}
             onEditRecurringPattern={setEditRecurringPattern}
@@ -432,7 +430,7 @@ function ReminderList({
   }
 
   return (
-    <ul className="space-y-3 max-h-[41vh] overflow-auto pr-2">
+    <ul className="space-y-3 pr-2">
       {reminders.map((reminder) => {
         const scheduleText =
           reminder.kind === "one-off"

@@ -302,3 +302,26 @@ export function listConversation(
 
   return messages.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
+
+export function getDueReminders(sessionId: string): ReminderItem[] {
+  const db = readDb();
+  const now = new Date();
+
+  return db.reminders.filter((item) => {
+    if (item.sessionId !== sessionId) return false;
+    if (item.status === "done") return false;
+
+    if (item.kind === "one-off" && item.dueAt) {
+      return new Date(item.dueAt) <= now;
+    }
+
+    if (item.kind === "recurring" && item.recurringTime) {
+      const [hours, minutes] = item.recurringTime.split(":").map(Number);
+      const due = new Date();
+      due.setHours(hours, minutes, 0, 0);
+      return due <= now;
+    }
+
+    return false;
+  });
+}

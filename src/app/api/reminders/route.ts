@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   createReminder,
   deleteReminder,
+  getDueReminders, // add this
   listReminders,
   markReminderDone,
   updateReminder,
@@ -9,8 +10,23 @@ import {
 
 export async function GET(request: NextRequest) {
   const sessionId = request.nextUrl.searchParams.get("sessionId") ?? undefined;
-  const reminders = listReminders(sessionId);
+  const dueOnly = request.nextUrl.searchParams.get("dueOnly") === "true";
 
+  if (dueOnly && sessionId) {
+    const dueReminders = getDueReminders(sessionId); // import this
+
+    const notifications = dueReminders.map((r) => ({
+      reminderId: r.id,
+      title: r.title,
+      eventAt: r.dueAt ?? new Date().toISOString(),
+      scheduledFor: new Date().toISOString(),
+      offsetHours: 0,
+    }));
+
+    return NextResponse.json({ notifications });
+  }
+
+  const reminders = listReminders(sessionId);
   return NextResponse.json({ reminders });
 }
 
