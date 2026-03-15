@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createReminder, listReminders, markReminderDone } from "@/lib/mvp-db";
+import {
+  createReminder,
+  deleteReminder,
+  listReminders,
+  markReminderDone,
+  updateReminder,
+} from "@/lib/mvp-db";
 
 export async function GET(request: NextRequest) {
   const sessionId = request.nextUrl.searchParams.get("sessionId") ?? undefined;
@@ -35,20 +41,18 @@ export async function POST(request: NextRequest) {
     type,
     sourceText,
     kind,
-    dueAt: kind === "one-off" ? dueAt ?? null : null,
-    recurringPattern: kind === "recurring" ? recurringPattern ?? "daily" : null,
-    recurringTime: kind === "recurring" ? recurringTime ?? "09:00" : null,
-    recurringWeekday:
-      kind === "recurring" && recurringPattern === "weekly"
-        ? Number(recurringWeekday ?? 1)
-        : null,
+    dueAt,
+    recurringPattern,
+    recurringTime,
+    recurringWeekday,
   });
 
   return NextResponse.json({ reminder }, { status: 201 });
 }
 
 export async function PATCH(request: NextRequest) {
-  const { reminderId } = await request.json();
+  const payload = await request.json();
+  const { reminderId, action, updates } = payload;
 
   if (!reminderId) {
     return NextResponse.json(
@@ -57,11 +61,45 @@ export async function PATCH(request: NextRequest) {
     );
   }
 
-  const updated = markReminderDone(reminderId);
+  if (action === "done") {
+    const updated = markReminderDone(reminderId);
+    if (!updated) {
+      return NextResponse.json(
+        { error: "Reminder not found" },
+        { status: 404 },
+      );
+    }
+    return NextResponse.json({ reminder: updated });
+  }
 
-  if (!updated) {
+  if (action === "update") {
+    const updated = updateReminder(reminderId, updates ?? {});
+    if (!updated) {
+      return NextResponse.json(
+        { error: "Reminder not found" },
+        { status: 404 },
+      );
+    }
+    return NextResponse.json({ reminder: updated });
+  }
+
+  return NextResponse.json({ error: "Unsupported action" }, { status: 400 });
+}
+
+export async function DELETE(request: NextRequest) {
+  const reminderId =
+    request.nextUrl.searchParams.get("reminderId") ?? undefined;
+  if (!reminderId) {
+    return NextResponse.json(
+      { error: "reminderId is required" },
+      { status: 400 },
+    );
+  }
+
+  const deleted = deleteReminder(reminderId);
+  if (!deleted) {
     return NextResponse.json({ error: "Reminder not found" }, { status: 404 });
   }
 
-  return NextResponse.json({ reminder: updated });
+  return NextResponse.json({ success: true });
 }

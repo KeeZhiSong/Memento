@@ -12,6 +12,7 @@ export interface StoredConversationMessage {
 export interface ReminderItem {
   id: string;
   sessionId: string;
+  kind: "one-off" | "recurring";
   type: "appointment" | "medication" | "general";
   title: string;
   sourceText: string;
@@ -45,19 +46,7 @@ function ensureDb(): void {
 function readDb(): MementoDb {
   ensureDb();
   const raw = readFileSync(DB_FILE, "utf-8");
-  if (!raw.trim()) {
-    const initialData: MementoDb = { conversations: [], reminders: [] };
-    writeFileSync(DB_FILE, JSON.stringify(initialData, null, 2), "utf-8");
-    return initialData;
-  }
-
-  try {
-    return JSON.parse(raw) as MementoDb;
-  } catch {
-    const initialData: MementoDb = { conversations: [], reminders: [] };
-    writeFileSync(DB_FILE, JSON.stringify(initialData, null, 2), "utf-8");
-    return initialData;
-  }
+  return JSON.parse(raw) as MementoDb;
 }
 
 function writeDb(db: MementoDb): void {
@@ -128,20 +117,18 @@ export function extractReminders(params: {
   const lowerText = text.toLowerCase();
   const reminders: ReminderItem[] = [];
 
-  const hasAppointmentSignal = /(doctor|appointment|clinic|hospital|checkup)/i.test(
-    lowerText,
-  );
-  const hasMedicationSignal = /(medicine|medication|pill|tablet|take\s+my\s+med)/i.test(
-    lowerText,
-  );
-  const hasReminderSignal = /(remind me|don't forget|remember to|need to)/i.test(
-    lowerText,
-  );
+  const hasAppointmentSignal =
+    /(doctor|appointment|clinic|hospital|checkup)/i.test(lowerText);
+  const hasMedicationSignal =
+    /(medicine|medication|pill|tablet|take\s+my\s+med)/i.test(lowerText);
+  const hasReminderSignal =
+    /(remind me|don't forget|remember to|need to)/i.test(lowerText);
 
   if (hasAppointmentSignal) {
     reminders.push({
       id: nextId("rem"),
       sessionId: params.sessionId,
+      kind: "one-off",
       type: "appointment",
       title: "Doctor appointment",
       sourceText: text,
@@ -158,6 +145,7 @@ export function extractReminders(params: {
     reminders.push({
       id: nextId("rem"),
       sessionId: params.sessionId,
+      kind: "one-off",
       type: "medication",
       title: "Medication reminder",
       sourceText: text,
@@ -174,6 +162,7 @@ export function extractReminders(params: {
     reminders.push({
       id: nextId("rem"),
       sessionId: params.sessionId,
+      kind: "one-off",
       type: "general",
       title: "General reminder",
       sourceText: text,
@@ -202,7 +191,7 @@ export function createReminder(params: {
   sourceText: string;
   kind: "one-off" | "recurring";
   dueAt?: string | null;
-  recurringPattern?: "daily" | "weekly" | null;
+  recurringPattern?: "daily" | "weekly";
   recurringTime?: string | null;
   recurringWeekday?: number | null;
 }): ReminderItem {
@@ -211,15 +200,18 @@ export function createReminder(params: {
   const reminder: ReminderItem = {
     id: nextId("rem"),
     sessionId: params.sessionId,
+    kind: params.kind,
     type: params.type,
     title: params.title,
     sourceText: params.sourceText,
-    dueAt: params.kind === "one-off" ? params.dueAt ?? null : null,
-    recurringPattern: params.kind === "recurring" ? params.recurringPattern ?? "daily" : null,
-    recurringTime: params.kind === "recurring" ? params.recurringTime ?? "09:00" : null,
+    dueAt: params.kind === "one-off" ? (params.dueAt ?? null) : null,
+    recurringPattern:
+      params.kind === "recurring" ? (params.recurringPattern ?? "daily") : null,
+    recurringTime:
+      params.kind === "recurring" ? (params.recurringTime ?? "09:00") : null,
     recurringWeekday:
       params.kind === "recurring" && params.recurringPattern === "weekly"
-        ? params.recurringWeekday ?? 1
+        ? (params.recurringWeekday ?? 1)
         : null,
     status: "active",
     createdAt: now,
@@ -236,7 +228,56 @@ export function listReminders(sessionId?: string): ReminderItem[] {
     ? db.reminders.filter((item) => item.sessionId === sessionId)
     : db.reminders;
 
-  return reminders.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return reminders
+    .map((item) => ({
+      ...item,
+      kind: item.kind ?? "one-off",
+      status: item.status === "pending" ? "active" : item.status,
+      recurringPattern: item.recurringPattern ?? null,
+      recurringTime: item.recurringTime ?? null,
+      recurringWeekday: item.recurringWeekday ?? null,
+    }))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export function updateReminder(
+  reminderId: string,
+  updates: Partial<
+    Pick<
+      ReminderItem,
+      | "title"
+      | "type"
+      | "dueAt"
+      | "recurringPattern"
+      | "recurringTime"
+      | "recurringWeekday"
+      | "kind"
+    >
+  >,
+): ReminderItem | null {
+  const db = readDb();
+  const index = db.reminders.findIndex((item) => item.id === reminderId);
+  if (index === -1) {
+    return null;
+  }
+
+  const existing = db.reminders[index];
+  db.reminders[index] = {
+    ...existing,
+    ...updates,
+  };
+  writeDb(db);
+  return db.reminders[index];
+}
+
+export function deleteReminder(reminderId: string): boolean {
+  const db = readDb();
+  const index = db.reminders.findIndex((item) => item.id === reminderId);
+  if (index === -1) return false;
+
+  db.reminders.splice(index, 1);
+  writeDb(db);
+  return true;
 }
 
 export function markReminderDone(reminderId: string): ReminderItem | null {
@@ -251,7 +292,9 @@ export function markReminderDone(reminderId: string): ReminderItem | null {
   return db.reminders[index];
 }
 
-export function listConversation(sessionId?: string): StoredConversationMessage[] {
+export function listConversation(
+  sessionId?: string,
+): StoredConversationMessage[] {
   const db = readDb();
   const messages = sessionId
     ? db.conversations.filter((message) => message.sessionId === sessionId)
