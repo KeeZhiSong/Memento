@@ -1,8 +1,11 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { MOCK_SCHEDULE } from "@/lib/mock-data";
 import { useLanguage } from "@/hooks/useLanguage";
+import { useMode } from "@/hooks/useMode";
+
+const SCHEDULE_STORAGE_KEY = "memento-schedule";
 
 // ─── Types ───────────────────────────────────────────────
 type EventType = "routine" | "activity" | "medical" | "family";
@@ -132,15 +135,56 @@ function isSameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
+// ─── localStorage helpers ────────────────────────────────
+function loadEvents(): ScheduleEvent[] {
+  try {
+    const raw = localStorage.getItem(SCHEDULE_STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch { /* ignore */ }
+  return seedEvents();
+}
+
+function saveEvents(events: ScheduleEvent[]) {
+  localStorage.setItem(SCHEDULE_STORAGE_KEY, JSON.stringify(events));
+}
+
+// ─── Edit/Trash Icons ───────────────────────────────────
+function EditIcon({ className = "w-4 h-4" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+    </svg>
+  );
+}
+
+function TrashIcon({ className = "w-4 h-4" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="3 6 5 6 21 6" />
+      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+    </svg>
+  );
+}
+
 // ─── Main Component ──────────────────────────────────────
 export default function SchedulePage() {
   const { t } = useLanguage();
+  const { mode } = useMode();
+  const isCaretaker = mode === "caretaker";
   const today = useMemo(() => new Date(), []);
-  const [events, setEvents] = useState<ScheduleEvent[]>(seedEvents);
+  const [events, setEvents] = useState<ScheduleEvent[]>([]);
+  const [mounted, setMounted] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("month");
   const [selectedDate, setSelectedDate] = useState<Date>(today);
-  const [viewDate, setViewDate] = useState<Date>(today); // controls which month/week is shown
+  const [viewDate, setViewDate] = useState<Date>(today);
   const [showAddSheet, setShowAddSheet] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<ScheduleEvent | null>(null);
+
+  useEffect(() => {
+    setEvents(loadEvents());
+    setMounted(true);
+  }, []);
 
   const selectedDateStr = toDateStr(selectedDate);
   const todayStr = toDateStr(today);
@@ -185,9 +229,33 @@ export default function SchedulePage() {
       ? viewDate.getMonth() === today.getMonth() && viewDate.getFullYear() === today.getFullYear()
       : getWeekDays(viewDate).some((d) => isSameDay(d, today));
 
-  const handleAddEvent = (event: Omit<ScheduleEvent, "id">) => {
-    setEvents((prev) => [...prev, { ...event, id: `evt-${Date.now()}` }]);
+  const updateEvents = (updated: ScheduleEvent[]) => {
+    setEvents(updated);
+    saveEvents(updated);
+  };
+
+  const handleSaveEvent = (event: ScheduleEvent) => {
+    if (editingEvent) {
+      updateEvents(events.map((e) => (e.id === event.id ? event : e)));
+    } else {
+      updateEvents([...events, event]);
+    }
     setShowAddSheet(false);
+    setEditingEvent(null);
+  };
+
+  const handleDeleteEvent = (id: string) => {
+    updateEvents(events.filter((e) => e.id !== id));
+  };
+
+  const openEditSheet = (event: ScheduleEvent) => {
+    setEditingEvent(event);
+    setShowAddSheet(true);
+  };
+
+  const openAddSheet = () => {
+    setEditingEvent(null);
+    setShowAddSheet(true);
   };
 
   const selectDate = (d: Date) => {
@@ -213,6 +281,8 @@ export default function SchedulePage() {
           const d = selectedDate;
           return `${t(WEEKDAY_KEYS[d.getDay()])}, ${t(`month.${d.getMonth()}`)} ${d.getDate()}`;
         })();
+
+  if (!mounted) return null;
 
   return (
     <div className="h-[100dvh] overflow-y-auto bg-cream-50 pt-24 px-4 pb-28">
@@ -301,35 +371,48 @@ export default function SchedulePage() {
             {selectedEvents.length === 0 ? (
               <div className="glass-heavy rounded-2xl p-8 text-center">
                 <p className="text-navy/40 text-sm font-semibold">{t("schedule.noEvents")}</p>
-                <button
-                  onClick={() => setShowAddSheet(true)}
-                  className="mt-3 text-teal text-sm font-bold active:scale-95 transition-transform"
-                >
-                  {t("schedule.addOne")}
-                </button>
+                {isCaretaker && (
+                  <button
+                    onClick={openAddSheet}
+                    className="mt-3 text-teal text-sm font-bold active:scale-95 transition-transform"
+                  >
+                    {t("schedule.addOne")}
+                  </button>
+                )}
               </div>
             ) : (
-              selectedEvents.map((evt) => <EventCard key={evt.id} event={evt} />)
+              selectedEvents.map((evt) => (
+                <EventCard
+                  key={evt.id}
+                  event={evt}
+                  isCaretaker={isCaretaker}
+                  onEdit={() => openEditSheet(evt)}
+                  onDelete={() => handleDeleteEvent(evt.id)}
+                />
+              ))
             )}
           </div>
         )}
       </div>
 
-      {/* ── FAB add button ── */}
-      <button
-        onClick={() => setShowAddSheet(true)}
-        className="fixed bottom-24 right-5 w-14 h-14 rounded-full bg-teal text-white shadow-lg flex items-center justify-center active:scale-90 transition-transform z-40"
-        aria-label="Add event"
-      >
-        <PlusIcon />
-      </button>
+      {/* ── FAB add button (caretaker only) ── */}
+      {isCaretaker && (
+        <button
+          onClick={openAddSheet}
+          className="fixed bottom-24 right-5 w-14 h-14 rounded-full bg-teal text-white shadow-lg flex items-center justify-center active:scale-90 transition-transform z-40"
+          aria-label="Add event"
+        >
+          <PlusIcon />
+        </button>
+      )}
 
-      {/* ── Add event bottom sheet ── */}
+      {/* ── Add/Edit event bottom sheet ── */}
       {showAddSheet && (
         <AddEventSheet
           selectedDate={selectedDate}
-          onClose={() => setShowAddSheet(false)}
-          onSave={handleAddEvent}
+          editingEvent={editingEvent}
+          onClose={() => { setShowAddSheet(false); setEditingEvent(null); }}
+          onSave={handleSaveEvent}
         />
       )}
     </div>
@@ -533,7 +616,17 @@ function DayView({ events }: { events: ScheduleEvent[] }) {
 }
 
 // ─── Event Card ──────────────────────────────────────────
-function EventCard({ event }: { event: ScheduleEvent }) {
+function EventCard({
+  event,
+  isCaretaker,
+  onEdit,
+  onDelete,
+}: {
+  event: ScheduleEvent;
+  isCaretaker: boolean;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
   return (
     <div
       className={`glass-heavy rounded-2xl px-4 py-3.5 border-l-[3px] ${TYPE_BORDER_COLORS[event.type]} flex items-center gap-3`}
@@ -546,33 +639,67 @@ function EventCard({ event }: { event: ScheduleEvent }) {
         )}
       </div>
       <span className="text-xs font-bold text-navy/40 shrink-0">{event.time}</span>
+      {isCaretaker && (
+        <div className="flex gap-1 shrink-0">
+          <button
+            onClick={onEdit}
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-navy/30 hover:text-navy/60 active:scale-90 transition-all"
+          >
+            <EditIcon />
+          </button>
+          <button
+            onClick={onDelete}
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-navy/30 hover:text-warm-pink active:scale-90 transition-all"
+          >
+            <TrashIcon />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
 
-// ─── Add Event Sheet ─────────────────────────────────────
+// ─── Add/Edit Event Sheet ────────────────────────────────
+function parseTimeFields(time: string): { hour: string; minute: string; ampm: string } {
+  const match = time.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (!match) return { hour: "9", minute: "00", ampm: "AM" };
+  return { hour: match[1], minute: match[2], ampm: match[3].toUpperCase() };
+}
+
 function AddEventSheet({
   selectedDate,
+  editingEvent,
   onClose,
   onSave,
 }: {
   selectedDate: Date;
+  editingEvent: ScheduleEvent | null;
   onClose: () => void;
-  onSave: (event: Omit<ScheduleEvent, "id">) => void;
+  onSave: (event: ScheduleEvent) => void;
 }) {
   const { t } = useLanguage();
-  const [title, setTitle] = useState("");
-  const [date, setDate] = useState(toDateStr(selectedDate));
-  const [hour, setHour] = useState("9");
-  const [minute, setMinute] = useState("00");
-  const [ampm, setAmpm] = useState("AM");
-  const [type, setType] = useState<EventType>("routine");
-  const [notes, setNotes] = useState("");
+  const isEditing = !!editingEvent;
+  const parsedTime = editingEvent ? parseTimeFields(editingEvent.time) : null;
+
+  const [title, setTitle] = useState(editingEvent?.title ?? "");
+  const [date, setDate] = useState(editingEvent?.date ?? toDateStr(selectedDate));
+  const [hour, setHour] = useState(parsedTime?.hour ?? "9");
+  const [minute, setMinute] = useState(parsedTime?.minute ?? "00");
+  const [ampm, setAmpm] = useState(parsedTime?.ampm ?? "AM");
+  const [type, setType] = useState<EventType>(editingEvent?.type ?? "routine");
+  const [notes, setNotes] = useState(editingEvent?.notes ?? "");
 
   const handleSave = () => {
     if (!title.trim()) return;
     const timeStr = `${hour}:${minute} ${ampm}`;
-    onSave({ title: title.trim(), time: timeStr, type, date, notes: notes.trim() || undefined });
+    onSave({
+      id: editingEvent?.id ?? `evt-${Date.now()}`,
+      title: title.trim(),
+      time: timeStr,
+      type,
+      date,
+      notes: notes.trim() || undefined,
+    });
   };
 
   return (
@@ -590,7 +717,9 @@ function AddEventSheet({
         >
           {/* Header */}
           <div className="flex items-center justify-between mb-5">
-            <h3 className="text-lg font-bold text-navy">{t("schedule.newEvent")}</h3>
+            <h3 className="text-lg font-bold text-navy">
+              {isEditing ? (t("schedule.editEvent") ?? "Edit Event") : t("schedule.newEvent")}
+            </h3>
             <button
               onClick={onClose}
               className="w-8 h-8 rounded-full flex items-center justify-center text-navy/40 active:bg-navy/10 transition-colors"
@@ -696,7 +825,7 @@ function AddEventSheet({
                 title.trim() ? "bg-teal shadow-sm" : "bg-navy/20"
               }`}
             >
-              {t("schedule.save")}
+              {isEditing ? (t("schedule.save") ?? "Save") : t("schedule.save")}
             </button>
           </div>
         </div>

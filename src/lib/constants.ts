@@ -1,12 +1,25 @@
 import { NavTab } from "@/types/navigation";
+import { Mode } from "@/hooks/useMode";
 
-export const NAV_TABS: NavTab[] = [
+const ALL_NAV_TABS: NavTab[] = [
   { id: "home", label: "Home", href: "/home", icon: "home" },
+  { id: "dashboard", label: "Dashboard", href: "/dashboard", icon: "dashboard" },
   { id: "wellness", label: "Wellness", href: "/wellness", icon: "heart" },
   { id: "reminders", label: "Reminders", href: "/reminders", icon: "bell" },
   { id: "schedule", label: "Schedule", href: "/schedule", icon: "calendar" },
   { id: "settings", label: "Settings", href: "/settings", icon: "settings" },
 ];
+
+const ELDERLY_TAB_IDS = new Set(["home", "wellness", "settings"]);
+const CARETAKER_TAB_IDS = new Set(["home", "dashboard", "wellness", "reminders", "schedule", "settings"]);
+
+export function getNavTabs(mode: Mode): NavTab[] {
+  const allowed = mode === "elderly" ? ELDERLY_TAB_IDS : CARETAKER_TAB_IDS;
+  return ALL_NAV_TABS.filter((tab) => allowed.has(tab.id));
+}
+
+// Keep for backward compat
+export const NAV_TABS = ALL_NAV_TABS;
 
 export const TYPEWRITER_SPEED = 35; // ms per character
 export const LISTENING_DURATION = 2000; // ms

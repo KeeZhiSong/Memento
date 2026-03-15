@@ -4,6 +4,7 @@ import { BackgroundProvider } from "@/hooks/useBackground";
 import { AvatarProvider } from "@/hooks/useAvatar";
 import { LanguageProvider } from "@/hooks/useLanguage";
 import ReminderPopup from "@/components/reminder/ReminderPopup";
+import { ModeProvider } from "@/hooks/useMode";
 
 export default function MainLayout({
   children,

@@ -3,15 +3,43 @@
 import { useBackground, BACKGROUNDS } from "@/hooks/useBackground";
 import { useAvatar, AVATARS } from "@/hooks/useAvatar";
 import { useLanguage, LANGUAGES } from "@/hooks/useLanguage";
+import { useMode, Mode } from "@/hooks/useMode";
 
 export default function SettingsPage() {
   const { background, setBackground } = useBackground();
   const { avatar, setAvatar } = useAvatar();
   const { language, setLanguage, t } = useLanguage();
+  const { mode, setMode } = useMode();
 
   return (
     <div className="h-[100dvh] overflow-y-auto bg-cream-50 pt-24 px-5 pb-10">
       <div className="max-w-md mx-auto space-y-5">
+        {/* Mode toggle */}
+        <div className="glass-heavy rounded-2xl p-6">
+          <h2 className="text-lg font-bold text-navy mb-4">{t("settings.mode") ?? "Mode"}</h2>
+          <div className="flex gap-2">
+            {(["elderly", "caretaker"] as Mode[]).map((m) => {
+              const isActive = mode === m;
+              const label = m === "elderly"
+                ? (t("settings.elderlyMode") ?? "Elderly")
+                : (t("settings.caretakerMode") ?? "Caretaker");
+              return (
+                <button
+                  key={m}
+                  onClick={() => setMode(m)}
+                  className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all active:scale-95 ${
+                    isActive
+                      ? "bg-teal text-white shadow-sm"
+                      : "bg-white/40 text-navy/50 border border-navy/10"
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Language picker */}
         <div className="glass-heavy rounded-2xl p-6">
           <h2 className="text-lg font-bold text-navy mb-4">{t("settings.language")}</h2>

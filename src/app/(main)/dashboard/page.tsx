@@ -1,0 +1,271 @@
+"use client";
+
+import { useState, useEffect, useMemo } from "react";
+import Link from "next/link";
+import { useLanguage } from "@/hooks/useLanguage";
+import { useNotifications } from "@/hooks/useNotifications";
+
+// ── localStorage keys (shared with other pages) ──
+const MOOD_KEY = "memento-mood";
+const REMINDERS_KEY = "memento-reminders";
+const SCHEDULE_KEY = "memento-schedule";
+const CONVERSATION_KEY = "memento-last-conversation";
+
+// ── Types ──
+interface MoodEntry {
+  date: string;
+  key: string;
+}
+
+interface Reminder {
+  id: string;
+  text: string;
+  time: string;
+  type: "general" | "medication";
+  dosage?: string;
+  taken?: boolean;
+}
+
+interface ScheduleEvent {
+  id: string;
+  title: string;
+  time: string;
+  type: string;
+  date: string;
+}
+
+// ── Helpers ──
+function getTodayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function getMoodEmoji(key: string): string {
+  const map: Record<string, string> = {
+    "wellness.mood.great": "😊",
+    "wellness.mood.good": "🙂",
+    "wellness.mood.okay": "😐",
+    "wellness.mood.low": "😔",
+    "wellness.mood.sad": "😢",
+  };
+  return map[key] ?? "—";
+}
+
+function getMoodLabel(key: string): string {
+  const map: Record<string, string> = {
+    "wellness.mood.great": "Great",
+    "wellness.mood.good": "Good",
+    "wellness.mood.okay": "Okay",
+    "wellness.mood.low": "Low",
+    "wellness.mood.sad": "Sad",
+  };
+  return map[key] ?? "Unknown";
+}
+
+// ── Component ──
+export default function DashboardPage() {
+  const { t } = useLanguage();
+  const { notifications, dismiss, dismissAll } = useNotifications();
+  const [mounted, setMounted] = useState(false);
+  const [mood, setMood] = useState<MoodEntry | null>(null);
+  const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [schedule, setSchedule] = useState<ScheduleEvent[]>([]);
+  const [lastConversation, setLastConversation] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Load mood
+    try {
+      const raw = localStorage.getItem(MOOD_KEY);
+      if (raw) setMood(JSON.parse(raw));
+    } catch { /* ignore */ }
+
+    // Load reminders
+    try {
+      const raw = localStorage.getItem(REMINDERS_KEY);
+      if (raw) setReminders(JSON.parse(raw));
+    } catch { /* ignore */ }
+
+    // Load schedule
+    try {
+      const raw = localStorage.getItem(SCHEDULE_KEY);
+      if (raw) setSchedule(JSON.parse(raw));
+    } catch { /* ignore */ }
+
+    // Load last conversation time
+    try {
+      const raw = localStorage.getItem(CONVERSATION_KEY);
+      if (raw) setLastConversation(raw);
+    } catch { /* ignore */ }
+
+    setMounted(true);
+  }, []);
+
+  const today = getTodayKey();
+  const isMoodToday = mood?.date === today;
+  const isMoodLow = mood?.key === "wellness.mood.low" || mood?.key === "wellness.mood.sad";
+
+  const medicationReminders = reminders.filter((r) => r.type === "medication");
+  const takenCount = medicationReminders.filter((r) => r.taken).length;
+  const totalMeds = medicationReminders.length;
+  const adherencePercent = totalMeds > 0 ? Math.round((takenCount / totalMeds) * 100) : null;
+
+  const todayEvents = useMemo(
+    () => schedule.filter((e) => e.date === today),
+    [schedule, today]
+  );
+
+  if (!mounted) return null;
+
+  return (
+    <div className="h-[100dvh] overflow-y-auto bg-cream-50 pt-24 px-5 pb-10">
+      <div className="max-w-md mx-auto space-y-5">
+        <h1 className="text-2xl font-bold text-navy">
+          {t("dashboard.title") ?? "Dashboard"}
+        </h1>
+
+        {/* ── Summary Cards ── */}
+        <div className="grid grid-cols-2 gap-3">
+          {/* Mood */}
+          <div className={`glass-heavy rounded-2xl p-5 ${isMoodLow && isMoodToday ? "ring-2 ring-warm-pink" : ""}`}>
+            <p className="text-xs font-bold text-navy/40 mb-2">
+              {t("dashboard.mood") ?? "Today's Mood"}
+            </p>
+            {isMoodToday && mood ? (
+              <div className="flex items-center gap-2">
+                <span className="text-3xl">{getMoodEmoji(mood.key)}</span>
+                <span className="text-sm font-bold text-navy">{getMoodLabel(mood.key)}</span>
+              </div>
+            ) : (
+              <p className="text-sm text-navy/40 font-semibold">No check-in yet</p>
+            )}
+            {isMoodLow && isMoodToday && (
+              <p className="text-xs text-warm-pink font-bold mt-2">Needs attention</p>
+            )}
+          </div>
+
+          {/* Medication Adherence */}
+          <div className="glass-heavy rounded-2xl p-5">
+            <p className="text-xs font-bold text-navy/40 mb-2">
+              {t("dashboard.medication") ?? "Medication"}
+            </p>
+            {adherencePercent !== null ? (
+              <>
+                <p className="text-3xl font-bold text-navy">{adherencePercent}%</p>
+                <p className="text-xs text-navy/50 font-semibold">
+                  {takenCount}/{totalMeds} taken
+                </p>
+              </>
+            ) : (
+              <p className="text-sm text-navy/40 font-semibold">No medications set</p>
+            )}
+          </div>
+
+          {/* Upcoming Appointments */}
+          <div className="glass-heavy rounded-2xl p-5">
+            <p className="text-xs font-bold text-navy/40 mb-2">
+              {t("dashboard.appointments") ?? "Today's Events"}
+            </p>
+            <p className="text-3xl font-bold text-navy">{todayEvents.length}</p>
+            <p className="text-xs text-navy/50 font-semibold">scheduled</p>
+          </div>
+
+          {/* Last Conversation */}
+          <div className="glass-heavy rounded-2xl p-5">
+            <p className="text-xs font-bold text-navy/40 mb-2">
+              {t("dashboard.lastChat") ?? "Last Chat"}
+            </p>
+            {lastConversation ? (
+              <p className="text-sm font-bold text-navy">{lastConversation}</p>
+            ) : (
+              <p className="text-sm text-navy/40 font-semibold">No conversation yet</p>
+            )}
+          </div>
+        </div>
+
+        {/* ── Notifications / Alerts ── */}
+        {notifications.length > 0 && (
+          <div className="glass-heavy rounded-2xl p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-bold text-navy/60">
+                {t("dashboard.alerts") ?? "Alerts"}
+              </h2>
+              <button
+                onClick={dismissAll}
+                className="text-xs font-bold text-navy/40 active:scale-95 transition-transform"
+              >
+                Dismiss all
+              </button>
+            </div>
+
+            {notifications.map((n) => {
+              const icon = n.type === "mood" ? "⚠️" : n.type === "medication" ? "💊" : "📋";
+              const bg = n.severity === "warning"
+                ? "bg-warm-pink/10 border-warm-pink/20"
+                : "bg-teal/10 border-teal/20";
+              return (
+                <div key={n.id} className={`flex items-center gap-3 p-3 rounded-xl border ${bg}`}>
+                  <span className="text-lg">{icon}</span>
+                  <p className="text-sm font-semibold text-navy flex-1">{n.message}</p>
+                  <button
+                    onClick={() => dismiss(n.id)}
+                    className="w-6 h-6 rounded-full flex items-center justify-center text-navy/30 hover:text-navy/60 active:scale-90 transition-all shrink-0"
+                  >
+                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* ── Today's Schedule ── */}
+        <div className="glass-heavy rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-bold text-navy/60">
+              {t("dashboard.todaySchedule") ?? "Today's Schedule"}
+            </h2>
+            <Link href="/schedule" className="text-xs font-bold text-teal active:scale-95 transition-transform">
+              {t("dashboard.viewAll") ?? "View All"}
+            </Link>
+          </div>
+          {todayEvents.length === 0 ? (
+            <p className="text-sm text-navy/40 font-semibold">No events today</p>
+          ) : (
+            <div className="space-y-2">
+              {todayEvents.slice(0, 5).map((evt) => (
+                <div key={evt.id} className="flex items-center gap-3 p-3 rounded-xl bg-white/30">
+                  <span className="text-xs font-bold text-navy/40 w-16 shrink-0">{evt.time}</span>
+                  <p className="text-sm font-semibold text-navy truncate">{evt.title}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* ── Quick Actions ── */}
+        <div className="grid grid-cols-2 gap-3">
+          <Link
+            href="/reminders"
+            className="glass-heavy rounded-2xl p-5 text-center active:scale-95 transition-transform"
+          >
+            <span className="text-2xl block mb-2">💊</span>
+            <p className="text-sm font-bold text-navy">
+              {t("dashboard.addMedication") ?? "Manage Medications"}
+            </p>
+          </Link>
+          <Link
+            href="/schedule"
+            className="glass-heavy rounded-2xl p-5 text-center active:scale-95 transition-transform"
+          >
+            <span className="text-2xl block mb-2">📅</span>
+            <p className="text-sm font-bold text-navy">
+              {t("dashboard.addAppointment") ?? "Manage Schedule"}
+            </p>
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
