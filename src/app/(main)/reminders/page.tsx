@@ -42,10 +42,19 @@ export default function RemindersPage() {
   const [kind, setKind] = useState<ReminderKind>("one-off");
   const [type, setType] = useState<ReminderType>("general");
   const [dueAt, setDueAt] = useState("");
-  const [recurringPattern, setRecurringPattern] = useState<RecurringPattern>("daily");
+  const [recurringPattern, setRecurringPattern] =
+    useState<RecurringPattern>("daily");
   const [recurringTime, setRecurringTime] = useState("09:00");
   const [recurringWeekday, setRecurringWeekday] = useState(1);
-  const [editingRecurringTime, setEditingRecurringTime] = useState<Record<string, string>>({});
+
+  const [editingReminderId, setEditingReminderId] = useState<string | null>(
+    null,
+  );
+  const [editTitle, setEditTitle] = useState("");
+  const [editDueAt, setEditDueAt] = useState("");
+  const [editRecurringPattern, setEditRecurringPattern] =
+    useState<RecurringPattern>("daily");
+  const [editRecurringTime, setEditRecurringTime] = useState("09:00");
 
   useEffect(() => {
     setSessionId(getOrCreateSessionId());
@@ -79,12 +88,18 @@ export default function RemindersPage() {
   }, [loadReminders]);
 
   const recurringReminders = useMemo(
-    () => reminders.filter((item) => item.kind === "recurring" && item.status === "active"),
+    () =>
+      reminders.filter(
+        (item) => item.kind === "recurring" && item.status === "active",
+      ),
     [reminders],
   );
 
   const oneOffReminders = useMemo(
-    () => reminders.filter((item) => item.kind === "one-off" && item.status === "active"),
+    () =>
+      reminders.filter(
+        (item) => item.kind === "one-off" && item.status === "active",
+      ),
     [reminders],
   );
 
@@ -93,14 +108,13 @@ export default function RemindersPage() {
     [reminders],
   );
 
+  const isSaveEnabled =
+    title.trim().length > 0 &&
+    (kind === "one-off" ? dueAt.length > 0 : recurringTime.length > 0);
+
   const handleCreateReminder = async (event: FormEvent) => {
     event.preventDefault();
     if (!sessionId || !title.trim()) return;
-
-    if (kind === "one-off" && !dueAt) {
-      setError("Please select date and time for one-off reminders.");
-      return;
-    }
 
     const payload: Record<string, unknown> = {
       sessionId,
@@ -120,24 +134,14 @@ export default function RemindersPage() {
       }
     }
 
-    let response = await fetch("/api/reminders", {
+    const response = await fetch("/api/reminders", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
 
-    // MVP fallback for environments/proxies that reject POST on route handlers.
-    if (response.status === 405) {
-      response = await fetch("/api/reminders", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-    }
-
     if (!response.ok) {
-      const text = await response.text();
-      setError(`Failed to create reminder (${response.status}): ${text || "unknown error"}`);
+      setError(`Failed to create reminder (${response.status})`);
       return;
     }
 
@@ -145,10 +149,6 @@ export default function RemindersPage() {
     setDueAt("");
     await loadReminders();
   };
-
-  const isCreateReminderReady =
-    title.trim().length > 0 &&
-    (kind === "one-off" ? Boolean(dueAt) : Boolean(recurringPattern && recurringTime));
 
   const markDone = async (reminderId: string) => {
     const response = await fetch("/api/reminders", {
@@ -165,38 +165,62 @@ export default function RemindersPage() {
     await loadReminders();
   };
 
-  const deleteCompleted = async (reminderId: string) => {
-    const response = await fetch("/api/reminders", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ reminderId }),
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      setError(`Failed to delete reminder (${response.status}): ${text || "unknown error"}`);
-      return;
-    }
-
-    await loadReminders();
+  const startEditing = (reminder: ReminderItem) => {
+    setEditingReminderId(reminder.id);
+    setEditTitle(reminder.title);
+    setEditDueAt(reminder.dueAt ?? "");
+    setEditRecurringPattern(reminder.recurringPattern ?? "daily");
+    setEditRecurringTime(reminder.recurringTime ?? "09:00");
   };
 
-  const updateRecurringTime = async (reminderId: string, nextTime: string) => {
+  const cancelEditing = () => {
+    setEditingReminderId(null);
+    setEditTitle("");
+    setEditDueAt("");
+    setEditRecurringPattern("daily");
+    setEditRecurringTime("09:00");
+  };
+
+  const saveEdit = async (reminder: ReminderItem) => {
+    const updates: Record<string, unknown> = {
+      title: editTitle.trim() || reminder.title,
+    };
+    if (reminder.kind === "one-off") {
+      updates.dueAt = editDueAt ? new Date(editDueAt).toISOString() : null;
+    } else {
+      updates.recurringPattern = editRecurringPattern;
+      updates.recurringTime = editRecurringTime;
+    }
+
     const response = await fetch("/api/reminders", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        reminderId,
-        action: "update_recurring_time",
-        recurringTime: nextTime,
+        reminderId: reminder.id,
+        action: "update",
+        updates,
       }),
     });
 
     if (!response.ok) {
-      const text = await response.text();
-      setError(
-        `Failed to update recurring reminder (${response.status}): ${text || "unknown error"}`,
-      );
+      setError(`Failed to edit reminder (${response.status})`);
+      return;
+    }
+
+    cancelEditing();
+    await loadReminders();
+  };
+
+  const deleteReminder = async (reminderId: string) => {
+    const response = await fetch(
+      `/api/reminders?reminderId=${encodeURIComponent(reminderId)}`,
+      {
+        method: "DELETE",
+      },
+    );
+
+    if (!response.ok) {
+      setError(`Failed to delete reminder (${response.status})`);
       return;
     }
 
@@ -204,11 +228,14 @@ export default function RemindersPage() {
   };
 
   return (
-    <div className="h-[100dvh] overflow-y-auto bg-cream-50 pt-24 px-5 pb-24">
-      <div className="glass-heavy rounded-2xl p-6 w-[80vw] max-w-6xl mx-auto space-y-6">
+    <div className="min-h-screen bg-cream-50 pt-24 px-3 pb-24 overflow-y-auto">
+      <div className="glass-heavy rounded-2xl p-6 w-[80vw] max-w-5xl mx-auto space-y-6">
         <h1 className="text-2xl font-bold text-navy">{t("reminders.title")}</h1>
 
-        <form onSubmit={handleCreateReminder} className="rounded-xl bg-white/70 p-4 space-y-3">
+        <form
+          onSubmit={handleCreateReminder}
+          className="rounded-xl bg-white/70 p-4 space-y-3"
+        >
           <h2 className="text-navy font-semibold">Add Reminder</h2>
           <div className="grid gap-3 sm:grid-cols-2">
             <input
@@ -248,7 +275,9 @@ export default function RemindersPage() {
               <>
                 <select
                   value={recurringPattern}
-                  onChange={(e) => setRecurringPattern(e.target.value as RecurringPattern)}
+                  onChange={(e) =>
+                    setRecurringPattern(e.target.value as RecurringPattern)
+                  }
                   className="rounded-lg border border-navy/20 bg-white px-3 py-2 text-sm"
                 >
                   <option value="daily">Daily</option>
@@ -263,7 +292,9 @@ export default function RemindersPage() {
                 {recurringPattern === "weekly" ? (
                   <select
                     value={recurringWeekday}
-                    onChange={(e) => setRecurringWeekday(Number(e.target.value))}
+                    onChange={(e) =>
+                      setRecurringWeekday(Number(e.target.value))
+                    }
                     className="rounded-lg border border-navy/20 bg-white px-3 py-2 text-sm sm:col-span-2"
                   >
                     {WEEKDAY_OPTIONS.map((day) => (
@@ -278,10 +309,10 @@ export default function RemindersPage() {
           </div>
           <button
             type="submit"
-            disabled={!isCreateReminderReady}
-            className={`rounded-lg px-4 py-2 text-sm font-semibold text-white transition-colors ${
-              isCreateReminderReady
-                ? "bg-warm-pink"
+            disabled={!isSaveEnabled}
+            className={`rounded-lg px-4 py-2 text-sm font-semibold text-white ${
+              isSaveEnabled
+                ? "bg-warm-pink hover:bg-pink-600"
                 : "bg-navy/30 cursor-not-allowed"
             }`}
           >
@@ -291,34 +322,69 @@ export default function RemindersPage() {
 
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
-        {loading ? <p className="text-sm text-navy/60">Loading reminders...</p> : null}
+        {loading ? (
+          <p className="text-sm text-navy/60">Loading reminders...</p>
+        ) : null}
 
-        <section>
-          <h2 className="text-lg font-semibold text-navy mb-2">Recurring Reminders</h2>
+        <section className="space-y-4">
+          <h2 className="text-lg font-semibold text-navy">
+            Recurring Reminders
+          </h2>
           <ReminderList
             reminders={recurringReminders}
             onDone={markDone}
-            editableRecurring
-            editingRecurringTime={editingRecurringTime}
-            onEditingRecurringTimeChange={(reminderId, value) =>
-              setEditingRecurringTime((prev) => ({ ...prev, [reminderId]: value }))
-            }
-            onSaveRecurringTime={updateRecurringTime}
+            onDelete={deleteReminder}
+            onEdit={startEditing}
+            editingReminderId={editingReminderId}
+            editTitle={editTitle}
+            editDueAt={editDueAt}
+            editRecurringPattern={recurringPattern}
+            editRecurringTime={recurringTime}
+            onEditTitle={setEditTitle}
+            onEditDueAt={setEditDueAt}
+            onEditRecurringPattern={setEditRecurringPattern}
+            onEditRecurringTime={setEditRecurringTime}
+            onCancelEdit={cancelEditing}
+            onSaveEdit={saveEdit}
           />
         </section>
 
-        <section>
-          <h2 className="text-lg font-semibold text-navy mb-2">One-off Reminders</h2>
-          <ReminderList reminders={oneOffReminders} onDone={markDone} />
+        <section className="space-y-4">
+          <h2 className="text-lg font-semibold text-navy">One-off Reminders</h2>
+          <ReminderList
+            reminders={oneOffReminders}
+            onDone={markDone}
+            onDelete={deleteReminder}
+            onEdit={startEditing}
+            editingReminderId={editingReminderId}
+            editTitle={editTitle}
+            editDueAt={editDueAt}
+            onEditTitle={setEditTitle}
+            onEditDueAt={setEditDueAt}
+            onEditRecurringPattern={setEditRecurringPattern}
+            onEditRecurringTime={setEditRecurringTime}
+            onCancelEdit={cancelEditing}
+            onSaveEdit={saveEdit}
+          />
         </section>
 
-        <section>
-          <h2 className="text-lg font-semibold text-navy mb-2">Completed</h2>
+        <section className="space-y-4">
+          <h2 className="text-lg font-semibold text-navy">Completed</h2>
           <ReminderList
             reminders={doneReminders}
             onDone={markDone}
-            onDelete={deleteCompleted}
             hideDoneAction
+            onDelete={deleteReminder}
+            onEdit={startEditing}
+            editingReminderId={editingReminderId}
+            editTitle={editTitle}
+            editDueAt={editDueAt}
+            onEditTitle={setEditTitle}
+            onEditDueAt={setEditDueAt}
+            onEditRecurringPattern={setEditRecurringPattern}
+            onEditRecurringTime={setEditRecurringTime}
+            onCancelEdit={cancelEditing}
+            onSaveEdit={saveEdit}
           />
         </section>
       </div>
@@ -330,19 +396,35 @@ function ReminderList({
   reminders,
   onDone,
   onDelete,
-  editableRecurring = false,
-  editingRecurringTime = {},
-  onEditingRecurringTimeChange,
-  onSaveRecurringTime,
+  onEdit,
+  editingReminderId,
+  editTitle,
+  editDueAt,
+  editRecurringPattern,
+  editRecurringTime,
+  onEditTitle,
+  onEditDueAt,
+  onEditRecurringPattern,
+  onEditRecurringTime,
+  onSaveEdit,
+  onCancelEdit,
   hideDoneAction = false,
 }: {
   reminders: ReminderItem[];
   onDone: (reminderId: string) => void;
   onDelete?: (reminderId: string) => void;
-  editableRecurring?: boolean;
-  editingRecurringTime?: Record<string, string>;
-  onEditingRecurringTimeChange?: (reminderId: string, nextTime: string) => void;
-  onSaveRecurringTime?: (reminderId: string, nextTime: string) => void;
+  onEdit?: (reminder: ReminderItem) => void;
+  editingReminderId?: string | null;
+  editTitle?: string;
+  editDueAt?: string;
+  editRecurringPattern?: RecurringPattern;
+  editRecurringTime?: string;
+  onEditTitle?: (value: string) => void;
+  onEditDueAt?: (value: string) => void;
+  onEditRecurringPattern?: (value: RecurringPattern) => void;
+  onEditRecurringTime?: (value: string) => void;
+  onSaveEdit?: (reminder: ReminderItem) => void;
+  onCancelEdit?: () => void;
   hideDoneAction?: boolean;
 }) {
   if (reminders.length === 0) {
@@ -350,10 +432,8 @@ function ReminderList({
   }
 
   return (
-    <ul className="space-y-3 max-h-[36vh] overflow-y-auto pr-1">
+    <ul className="space-y-3 max-h-[41vh] overflow-auto pr-2">
       {reminders.map((reminder) => {
-        const currentRecurringTime =
-          editingRecurringTime[reminder.id] ?? reminder.recurringTime ?? "09:00";
         const scheduleText =
           reminder.kind === "one-off"
             ? reminder.dueAt
@@ -364,58 +444,110 @@ function ReminderList({
               : `Daily at ${reminder.recurringTime ?? "09:00"}`;
 
         const extracted = reminder.sourceText !== reminder.title;
+        const isEditing = editingReminderId === reminder.id;
 
         return (
           <li
             key={reminder.id}
-            className="rounded-xl border border-navy/10 bg-white/80 p-3 flex items-start justify-between gap-3"
+            className="rounded-xl border border-navy/10 bg-white/80 p-3 flex flex-col gap-2"
           >
-            <div>
-              <p className="font-semibold text-sm text-navy">{reminder.title}</p>
-              <p className="text-xs text-navy/60">{scheduleText}</p>
-              {editableRecurring && reminder.kind === "recurring" ? (
-                <div className="mt-2 flex items-center gap-2">
+            {isEditing ? (
+              <div className="grid gap-2 sm:grid-cols-2">
+                <input
+                  value={editTitle}
+                  onChange={(e) => onEditTitle?.(e.target.value)}
+                  className="rounded-lg border border-navy/20 px-2 py-1"
+                />
+                {reminder.kind === "one-off" ? (
                   <input
-                    type="time"
-                    value={currentRecurringTime}
-                    onChange={(e) =>
-                      onEditingRecurringTimeChange?.(reminder.id, e.target.value)
-                    }
-                    className="rounded-md border border-navy/20 bg-white px-2 py-1 text-xs"
+                    type="datetime-local"
+                    value={editDueAt}
+                    onChange={(e) => onEditDueAt?.(e.target.value)}
+                    className="rounded-lg border border-navy/20 px-2 py-1"
                   />
+                ) : (
+                  <>
+                    <select
+                      value={editRecurringPattern}
+                      onChange={(e) =>
+                        onEditRecurringPattern?.(
+                          e.target.value as RecurringPattern,
+                        )
+                      }
+                      className="rounded-lg border border-navy/20 px-2 py-1"
+                    >
+                      <option value="daily">Daily</option>
+                      <option value="weekly">Weekly</option>
+                    </select>
+                    <input
+                      type="time"
+                      value={editRecurringTime}
+                      onChange={(e) => onEditRecurringTime?.(e.target.value)}
+                      className="rounded-lg border border-navy/20 px-2 py-1"
+                    />
+                  </>
+                )}
+                <div className="flex gap-2 sm:col-span-2">
                   <button
                     type="button"
-                    onClick={() => onSaveRecurringTime?.(reminder.id, currentRecurringTime)}
+                    onClick={() => onSaveEdit?.(reminder)}
+                    className="rounded-md bg-navy px-2 py-1 text-xs text-white"
+                  >
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onCancelEdit}
                     className="rounded-md border border-navy/20 px-2 py-1 text-xs text-navy"
                   >
-                    Save time
+                    Cancel
                   </button>
                 </div>
-              ) : null}
-              <p className="text-xs text-navy/50 mt-1">
-                {extracted ? "Extracted from conversation" : "Added manually"}
-              </p>
-            </div>
-            <div className="flex gap-2">
-              {!hideDoneAction && reminder.status === "active" ? (
-                <button
-                  type="button"
-                  onClick={() => onDone(reminder.id)}
-                  className="rounded-md border border-navy/20 px-2 py-1 text-xs text-navy"
-                >
-                  Mark done
-                </button>
-              ) : null}
-              {hideDoneAction && onDelete ? (
-                <button
-                  type="button"
-                  onClick={() => onDelete(reminder.id)}
-                  className="rounded-md border border-red-300 px-2 py-1 text-xs text-red-600"
-                >
-                  Delete
-                </button>
-              ) : null}
-            </div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="font-semibold text-sm text-navy">
+                    {reminder.title}
+                  </p>
+                  <p className="text-xs text-navy/60">{scheduleText}</p>
+                  <p className="text-xs text-navy/50 mt-1">
+                    {extracted
+                      ? "Extracted from conversation"
+                      : "Added manually"}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {!hideDoneAction && reminder.status === "active" ? (
+                    <button
+                      type="button"
+                      onClick={() => onDone(reminder.id)}
+                      className="rounded-md border border-navy/20 px-2 py-1 text-xs text-navy"
+                    >
+                      Mark done
+                    </button>
+                  ) : null}
+                  {onEdit ? (
+                    <button
+                      type="button"
+                      onClick={() => onEdit(reminder)}
+                      className="rounded-md border border-blue-300 px-2 py-1 text-xs text-blue-700"
+                    >
+                      Edit
+                    </button>
+                  ) : null}
+                  {onDelete ? (
+                    <button
+                      type="button"
+                      onClick={() => onDelete(reminder.id)}
+                      className="rounded-md border border-red-300 px-2 py-1 text-xs text-red-700"
+                    >
+                      Delete
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            )}
           </li>
         );
       })}
