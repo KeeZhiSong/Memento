@@ -16,7 +16,10 @@ export interface ReminderItem {
   title: string;
   sourceText: string;
   dueAt: string | null;
-  status: "pending" | "done";
+  recurringPattern: "daily" | "weekly" | null;
+  recurringTime: string | null;
+  recurringWeekday: number | null;
+  status: "active" | "done";
   createdAt: string;
 }
 
@@ -42,7 +45,19 @@ function ensureDb(): void {
 function readDb(): MementoDb {
   ensureDb();
   const raw = readFileSync(DB_FILE, "utf-8");
-  return JSON.parse(raw) as MementoDb;
+  if (!raw.trim()) {
+    const initialData: MementoDb = { conversations: [], reminders: [] };
+    writeFileSync(DB_FILE, JSON.stringify(initialData, null, 2), "utf-8");
+    return initialData;
+  }
+
+  try {
+    return JSON.parse(raw) as MementoDb;
+  } catch {
+    const initialData: MementoDb = { conversations: [], reminders: [] };
+    writeFileSync(DB_FILE, JSON.stringify(initialData, null, 2), "utf-8");
+    return initialData;
+  }
 }
 
 function writeDb(db: MementoDb): void {
@@ -131,7 +146,10 @@ export function extractReminders(params: {
       title: "Doctor appointment",
       sourceText: text,
       dueAt: parseDueAt(text),
-      status: "pending",
+      recurringPattern: null,
+      recurringTime: null,
+      recurringWeekday: null,
+      status: "active",
       createdAt: new Date().toISOString(),
     });
   }
@@ -144,7 +162,10 @@ export function extractReminders(params: {
       title: "Medication reminder",
       sourceText: text,
       dueAt: parseDueAt(text),
-      status: "pending",
+      recurringPattern: null,
+      recurringTime: null,
+      recurringWeekday: null,
+      status: "active",
       createdAt: new Date().toISOString(),
     });
   }
@@ -157,7 +178,10 @@ export function extractReminders(params: {
       title: "General reminder",
       sourceText: text,
       dueAt: parseDueAt(text),
-      status: "pending",
+      recurringPattern: null,
+      recurringTime: null,
+      recurringWeekday: null,
+      status: "active",
       createdAt: new Date().toISOString(),
     });
   }
@@ -169,6 +193,41 @@ export function extractReminders(params: {
   }
 
   return reminders;
+}
+
+export function createReminder(params: {
+  sessionId: string;
+  title: string;
+  type: "appointment" | "medication" | "general";
+  sourceText: string;
+  kind: "one-off" | "recurring";
+  dueAt?: string | null;
+  recurringPattern?: "daily" | "weekly" | null;
+  recurringTime?: string | null;
+  recurringWeekday?: number | null;
+}): ReminderItem {
+  const db = readDb();
+  const now = new Date().toISOString();
+  const reminder: ReminderItem = {
+    id: nextId("rem"),
+    sessionId: params.sessionId,
+    type: params.type,
+    title: params.title,
+    sourceText: params.sourceText,
+    dueAt: params.kind === "one-off" ? params.dueAt ?? null : null,
+    recurringPattern: params.kind === "recurring" ? params.recurringPattern ?? "daily" : null,
+    recurringTime: params.kind === "recurring" ? params.recurringTime ?? "09:00" : null,
+    recurringWeekday:
+      params.kind === "recurring" && params.recurringPattern === "weekly"
+        ? params.recurringWeekday ?? 1
+        : null,
+    status: "active",
+    createdAt: now,
+  };
+
+  db.reminders.push(reminder);
+  writeDb(db);
+  return reminder;
 }
 
 export function listReminders(sessionId?: string): ReminderItem[] {
