@@ -3,6 +3,7 @@ import AvatarStateMachineProvider from "@/components/avatar/AvatarStateMachine";
 import { BackgroundProvider } from "@/hooks/useBackground";
 import { AvatarProvider } from "@/hooks/useAvatar";
 import { LanguageProvider } from "@/hooks/useLanguage";
+import { ModeProvider } from "@/hooks/useMode";
 
 export default function MainLayout({
   children,
@@ -10,15 +11,17 @@ export default function MainLayout({
   children: React.ReactNode;
 }) {
   return (
-    <LanguageProvider>
-      <BackgroundProvider>
-        <AvatarProvider>
-          <AvatarStateMachineProvider>
-            <TopNavBar />
-            {children}
-          </AvatarStateMachineProvider>
-        </AvatarProvider>
-      </BackgroundProvider>
-    </LanguageProvider>
+    <ModeProvider>
+      <LanguageProvider>
+        <BackgroundProvider>
+          <AvatarProvider>
+            <AvatarStateMachineProvider>
+              <TopNavBar />
+              {children}
+            </AvatarStateMachineProvider>
+          </AvatarProvider>
+        </BackgroundProvider>
+      </LanguageProvider>
+    </ModeProvider>
   );
 }

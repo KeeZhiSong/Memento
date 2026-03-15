@@ -84,9 +84,40 @@ export const translations: Record<Language, Record<string, string>> = {
     "settings.language": "Language",
     "settings.settings": "Settings",
     "settings.placeholder": "Configure voice, caregiver contacts, and notification preferences. Coming soon.",
+    "settings.mode": "Mode",
+    "settings.elderlyMode": "Elderly",
+    "settings.caretakerMode": "Caretaker",
+
+    // Nav (extra)
+    "nav.dashboard": "Dashboard",
+
+    // Dashboard
+    "dashboard.title": "Dashboard",
+    "dashboard.mood": "Today's Mood",
+    "dashboard.medication": "Medication",
+    "dashboard.appointments": "Today's Events",
+    "dashboard.lastChat": "Last Chat",
+    "dashboard.alerts": "Alerts",
+    "dashboard.todaySchedule": "Today's Schedule",
+    "dashboard.viewAll": "View All",
+    "dashboard.addMedication": "Manage Medications",
+    "dashboard.addAppointment": "Manage Schedule",
+
+    // Schedule (extra)
+    "schedule.editEvent": "Edit Event",
 
     // Reminders
     "reminders.title": "Reminders",
+    "reminders.medications": "Medications",
+    "reminders.general": "General",
+    "reminders.add": "New Reminder",
+    "reminders.edit": "Edit Reminder",
+    "reminders.save": "Save",
+    "reminders.type": "Type",
+    "reminders.name": "Name",
+    "reminders.time": "Time",
+    "reminders.dosage": "Dosage",
+    "reminders.frequency": "Frequency",
 
     // Wellness
     "wellness.moodTitle": "How are you feeling today?",
@@ -165,8 +196,36 @@ export const translations: Record<Language, Record<string, string>> = {
     "settings.language": "语言",
     "settings.settings": "设置",
     "settings.placeholder": "配置语音、看护人联系方式和通知偏好。即将推出。",
+    "settings.mode": "模式",
+    "settings.elderlyMode": "长辈",
+    "settings.caretakerMode": "看护人",
+
+    "nav.dashboard": "仪表盘",
+
+    "dashboard.title": "仪表盘",
+    "dashboard.mood": "今日心情",
+    "dashboard.medication": "用药",
+    "dashboard.appointments": "今日事项",
+    "dashboard.lastChat": "上次聊天",
+    "dashboard.alerts": "提醒通知",
+    "dashboard.todaySchedule": "今日日程",
+    "dashboard.viewAll": "查看全部",
+    "dashboard.addMedication": "管理用药",
+    "dashboard.addAppointment": "管理日程",
+
+    "schedule.editEvent": "编辑事项",
 
     "reminders.title": "提醒",
+    "reminders.medications": "用药提醒",
+    "reminders.general": "一般提醒",
+    "reminders.add": "新增提醒",
+    "reminders.edit": "编辑提醒",
+    "reminders.save": "保存",
+    "reminders.type": "类型",
+    "reminders.name": "名称",
+    "reminders.time": "时间",
+    "reminders.dosage": "剂量",
+    "reminders.frequency": "频率",
 
     "wellness.moodTitle": "你今天感觉怎么样？",
     "wellness.activities": "活动",
@@ -243,8 +302,36 @@ export const translations: Record<Language, Record<string, string>> = {
     "settings.language": "மொழி",
     "settings.settings": "அமைப்புகள்",
     "settings.placeholder": "குரல், பராமரிப்பாளர் தொடர்புகள் மற்றும் அறிவிப்பு விருப்பங்களை அமைக்கவும். விரைவில் வரும்.",
+    "settings.mode": "முறை",
+    "settings.elderlyMode": "முதியோர்",
+    "settings.caretakerMode": "பராமரிப்பாளர்",
+
+    "nav.dashboard": "டாஷ்போர்டு",
+
+    "dashboard.title": "டாஷ்போர்டு",
+    "dashboard.mood": "இன்றைய மனநிலை",
+    "dashboard.medication": "மருந்து",
+    "dashboard.appointments": "இன்றைய நிகழ்வுகள்",
+    "dashboard.lastChat": "கடைசி உரையாடல்",
+    "dashboard.alerts": "எச்சரிக்கைகள்",
+    "dashboard.todaySchedule": "இன்றைய அட்டவணை",
+    "dashboard.viewAll": "அனைத்தையும் காண்",
+    "dashboard.addMedication": "மருந்துகளை நிர்வகி",
+    "dashboard.addAppointment": "அட்டவணையை நிர்வகி",
+
+    "schedule.editEvent": "நிகழ்வைத் திருத்து",
 
     "reminders.title": "நினைவூட்டல்",
+    "reminders.medications": "மருந்துகள்",
+    "reminders.general": "பொது",
+    "reminders.add": "புதிய நினைவூட்டல்",
+    "reminders.edit": "நினைவூட்டலைத் திருத்து",
+    "reminders.save": "சேமி",
+    "reminders.type": "வகை",
+    "reminders.name": "பெயர்",
+    "reminders.time": "நேரம்",
+    "reminders.dosage": "அளவு",
+    "reminders.frequency": "அலைவரிசை",
 
     "wellness.moodTitle": "இன்று எப்படி உணர்கிறீர்கள்?",
     "wellness.activities": "செயல்பாடுகள்",
