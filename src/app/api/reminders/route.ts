@@ -2,25 +2,38 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   createReminder,
   deleteReminder,
-  getDueReminders, // add this
+  getDueReminderNotifications,
   listReminders,
   markReminderDone,
+  markReminderNotified,
   updateReminder,
 } from "@/lib/mvp-db";
 
 export async function GET(request: NextRequest) {
   const sessionId = request.nextUrl.searchParams.get("sessionId") ?? undefined;
   const dueOnly = request.nextUrl.searchParams.get("dueOnly") === "true";
+  const markNotified =
+    request.nextUrl.searchParams.get("markNotified") === "true";
 
   if (dueOnly && sessionId) {
-    const dueReminders = getDueReminders(sessionId); // import this
+    const dueReminders = getDueReminderNotifications(sessionId);
+
+    if (markNotified) {
+      dueReminders.forEach((notification) => {
+        markReminderNotified(
+          notification.reminderId,
+          notification.offsetHours,
+          notification.eventAt,
+        );
+      });
+    }
 
     const notifications = dueReminders.map((r) => ({
-      reminderId: r.id,
+      reminderId: r.reminderId,
       title: r.title,
-      eventAt: r.dueAt ?? new Date().toISOString(),
-      scheduledFor: new Date().toISOString(),
-      offsetHours: 0,
+      eventAt: r.eventAt,
+      scheduledFor: r.scheduledFor,
+      offsetHours: r.offsetHours,
     }));
 
     return NextResponse.json({ notifications });

@@ -3,6 +3,7 @@ import AvatarStateMachineProvider from "@/components/avatar/AvatarStateMachine";
 import { BackgroundProvider } from "@/hooks/useBackground";
 import { AvatarProvider } from "@/hooks/useAvatar";
 import { LanguageProvider } from "@/hooks/useLanguage";
+import ReminderPopup from "@/components/reminder/ReminderPopup";
 
 export default function MainLayout({
   children,
@@ -15,6 +16,7 @@ export default function MainLayout({
         <AvatarProvider>
           <AvatarStateMachineProvider>
             <TopNavBar />
+            <ReminderPopup />
             {children}
           </AvatarStateMachineProvider>
         </AvatarProvider>

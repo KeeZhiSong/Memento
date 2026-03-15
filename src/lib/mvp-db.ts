@@ -21,6 +21,8 @@ export interface ReminderItem {
   recurringTime: string | null;
   recurringWeekday: number | null;
   status: "active" | "done";
+  notifiedOffsets: number[];
+  lastNotifiedAt: string | null;
   createdAt: string;
 }
 
@@ -214,6 +216,8 @@ export function createReminder(params: {
         ? (params.recurringWeekday ?? 1)
         : null,
     status: "active",
+    notifiedOffsets: [],
+    lastNotifiedAt: null,
     createdAt: now,
   };
 
@@ -236,6 +240,8 @@ export function listReminders(sessionId?: string): ReminderItem[] {
       recurringPattern: item.recurringPattern ?? null,
       recurringTime: item.recurringTime ?? null,
       recurringWeekday: item.recurringWeekday ?? null,
+      notifiedOffsets: item.notifiedOffsets ?? [],
+      lastNotifiedAt: item.lastNotifiedAt ?? null,
     }))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
@@ -262,10 +268,20 @@ export function updateReminder(
   }
 
   const existing = db.reminders[index];
-  db.reminders[index] = {
+  const updatedReminder: ReminderItem = {
     ...existing,
     ...updates,
+    notifiedOffsets:
+      updates.dueAt || updates.recurringPattern || updates.recurringTime
+        ? []
+        : existing.notifiedOffsets,
+    lastNotifiedAt:
+      updates.recurringPattern || updates.recurringTime
+        ? null
+        : existing.lastNotifiedAt,
   };
+
+  db.reminders[index] = updatedReminder;
   writeDb(db);
   return db.reminders[index];
 }
@@ -303,25 +319,120 @@ export function listConversation(
   return messages.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
-export function getDueReminders(sessionId: string): ReminderItem[] {
+export interface DueReminderNotificationItem {
+  reminderId: string;
+  title: string;
+  eventAt: string;
+  scheduledFor: string;
+  offsetHours: 12 | 6 | 1 | 0;
+}
+
+function isSameDay(value: string | null, compareDate: Date): boolean {
+  if (!value) return false;
+  const parsed = new Date(value);
+  return (
+    parsed.getFullYear() === compareDate.getFullYear() &&
+    parsed.getMonth() === compareDate.getMonth() &&
+    parsed.getDate() === compareDate.getDate()
+  );
+}
+
+export function getDueReminderNotifications(
+  sessionId: string,
+  now = new Date(),
+): DueReminderNotificationItem[] {
   const db = readDb();
-  const now = new Date();
+  const notifications: DueReminderNotificationItem[] = [];
 
-  return db.reminders.filter((item) => {
-    if (item.sessionId !== sessionId) return false;
-    if (item.status === "done") return false;
+  const oneOffOffsets: Array<12 | 6 | 1 | 0> = [12, 6, 1, 0];
 
-    if (item.kind === "one-off" && item.dueAt) {
-      return new Date(item.dueAt) <= now;
+  for (const reminder of db.reminders) {
+    if (reminder.sessionId !== sessionId) continue;
+    if (reminder.status === "done") continue;
+
+    if (reminder.kind === "one-off" && reminder.dueAt) {
+      const dueDate = new Date(reminder.dueAt);
+      if (Number.isNaN(dueDate.getTime())) continue;
+
+      for (const offset of oneOffOffsets) {
+        if (reminder.notifiedOffsets?.includes(offset)) continue;
+
+        const dueAtTimestamp = dueDate.getTime() - offset * 60 * 60 * 1000;
+        if (now.getTime() >= dueAtTimestamp) {
+          notifications.push({
+            reminderId: reminder.id,
+            title: reminder.title,
+            eventAt: new Date(dueAtTimestamp).toISOString(),
+            scheduledFor: dueDate.toISOString(),
+            offsetHours: offset,
+          });
+          break;
+        }
+      }
+      continue;
     }
 
-    if (item.kind === "recurring" && item.recurringTime) {
-      const [hours, minutes] = item.recurringTime.split(":").map(Number);
-      const due = new Date();
-      due.setHours(hours, minutes, 0, 0);
-      return due <= now;
-    }
+    if (
+      reminder.kind === "recurring" &&
+      reminder.recurringTime &&
+      reminder.status !== "done"
+    ) {
+      const [hours, minutes] = reminder.recurringTime.split(":").map(Number);
+      if (Number.isNaN(hours) || Number.isNaN(minutes)) continue;
 
-    return false;
+      const scheduled = new Date(now);
+      scheduled.setHours(hours, minutes, 0, 0);
+      scheduled.setMilliseconds(0);
+
+      if (reminder.recurringPattern === "weekly") {
+        if (reminder.recurringWeekday == null) continue;
+        if (scheduled.getDay() !== reminder.recurringWeekday) {
+          continue;
+        }
+      }
+
+      if (now.getTime() < scheduled.getTime()) continue;
+      if (isSameDay(reminder.lastNotifiedAt ?? null, scheduled)) continue;
+
+      notifications.push({
+        reminderId: reminder.id,
+        title: reminder.title,
+        eventAt: scheduled.toISOString(),
+        scheduledFor: scheduled.toISOString(),
+        offsetHours: 0,
+      });
+    }
+  }
+
+  // Sort by nearest scheduled time and highest-priority offset (12h first) so we notify predictably.
+  return notifications.sort((a, b) => {
+    const timeDiff =
+      new Date(a.eventAt).getTime() - new Date(b.eventAt).getTime();
+    if (timeDiff !== 0) return timeDiff;
+    return a.offsetHours - b.offsetHours;
   });
+}
+
+export function markReminderNotified(
+  reminderId: string,
+  offsetHours: 12 | 6 | 1 | 0 | null,
+  notifiedAt?: string,
+): ReminderItem | null {
+  const db = readDb();
+  const index = db.reminders.findIndex((item) => item.id === reminderId);
+  if (index === -1) return null;
+
+  const reminder = db.reminders[index];
+
+  if (offsetHours !== null && reminder.kind === "one-off") {
+    const offsets = new Set(reminder.notifiedOffsets ?? []);
+    offsets.add(offsetHours);
+    reminder.notifiedOffsets = Array.from(offsets).sort((a, b) => a - b);
+  } else {
+    reminder.lastNotifiedAt = notifiedAt ?? new Date().toISOString();
+  }
+
+  db.reminders[index] = reminder;
+  writeDb(db);
+  return reminder;
 }

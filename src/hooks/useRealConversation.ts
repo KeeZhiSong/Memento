@@ -21,7 +21,7 @@ export function useRealConversation({ dispatch }: UseRealConversationOptions) {
   const [bubbleText, setBubbleText] = useState("");
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const greetingDone = useRef(false);
-  const sessionIdRef = useRef(`session-${Date.now()}`);
+  const sessionIdRef = useRef(getOrCreateSessionId());
 
   // Greeting logic
   useEffect(() => {
@@ -88,8 +88,8 @@ export function useRealConversation({ dispatch }: UseRealConversationOptions) {
 
         const data = await response.json();
         // extract specific fields
-        const userTranscript = data.userText; 
-        const aiReply = data.aiText;      
+        const userTranscript = data.userText;
+        const aiReply = data.aiText;
 
         // Update chat log and UI
         setMessages((prev) => [
