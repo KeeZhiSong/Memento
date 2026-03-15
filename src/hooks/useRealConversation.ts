@@ -8,6 +8,7 @@ import { AvatarEvent } from "@/types/avatar";
 import { ConversationMessage } from "@/types/conversation";
 import { GREETING_TEXT } from "@/lib/mock-data";
 import { VAD_REDEMPTION_MS } from "@/lib/constants";
+import { getOrCreateSessionId } from "@/lib/client-session";
 import { useLanguage } from "@/hooks/useLanguage";
 
 interface UseRealConversationOptions {
@@ -24,6 +25,7 @@ export function useRealConversation({ dispatch }: UseRealConversationOptions) {
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [summary, setSummary] = useState<string>("No summary yet.");
   const greetingDone = useRef(false);
+  const sessionIdRef = useRef(getOrCreateSessionId());
   const greetingPlaybackAttemptedRef = useRef(false);
   const completionModeRef = useRef<"audio" | "bubble">("bubble");
   const activeSpeechKindRef = useRef<"greeting" | "speaking" | null>(null);
@@ -191,6 +193,7 @@ export function useRealConversation({ dispatch }: UseRealConversationOptions) {
         // Package the Blob into FormData so we can send it over HTTP
         const formData = new FormData();
         formData.append("audio", audioBlob, "recording.wav");
+        formData.append("sessionId", sessionIdRef.current);
         formData.append("history", JSON.stringify(messages)); // store entire convo history
         formData.append("summary", summary); // send current summary to backend for context
 
@@ -247,6 +250,21 @@ export function useRealConversation({ dispatch }: UseRealConversationOptions) {
       }
     },
   });
+
+
+  const addAssistantMessage = useCallback((text: string) => {
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: nextMessageId(),
+        role: "assistant",
+        text,
+        timestamp: Date.now(),
+      },
+    ]);
+    setBubbleText(text);
+    dispatch({ type: "START_SPEAKING", text });
+  }, [dispatch]);
 
   const handleMicPress = useCallback(() => {
     if (
@@ -309,8 +327,10 @@ export function useRealConversation({ dispatch }: UseRealConversationOptions) {
   return {
     bubbleText,
     messages,
+    sessionId: sessionIdRef.current,
     handleMicPress,
     handleGreetingComplete,
     handleSpeakingComplete,
+    addAssistantMessage,
   };
 }
