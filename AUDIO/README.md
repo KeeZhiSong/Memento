@@ -19,7 +19,7 @@ Currently just storing conversation history on client browser side.
 - always display "Listening" as long as after mic button is pressed
 
 
-### Database to store whole hsitory
+### Database to store whole history
 - frontend sends only the current audio.
 - Backend transcribes it, then looks into the Database to find "previous messages."
 - Backend combines the new message + the database messages and talks to MERaLiON.

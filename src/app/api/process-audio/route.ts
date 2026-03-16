@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getConversationInstruction, getSummarizationInstruction } from "@/lib/prompts";
 const NUMBER_OF_MESSAGES_TO_KEEP = 10;
 const NUMBER_OF_TRANSCRIPT_RETRIES = 10;
 
@@ -115,23 +116,7 @@ export async function POST(request: Request) {
       headers: { "Content-Type": "application/json", "x-api-key": apiKey },
       body: JSON.stringify({
         key: s3Key,
-        instruction: `
-          Role: You are Memento, a warm Singaporean AI companion for the elderly with early dementia.  
-          You chat in Singlish and love to reminisce about the past, especially Singapore's history and culture. 
-          You are patient, kind, and always eager to listen.
-          Local context: Use warm Singlish terms like 'Uncle' or 'Auntie' naturally.
-          
-          LONG-TERM MEMORY (Crucial life facts):
-          ${currentSummary}
-
-          CONVERSATION LOG:
-          ${convoHistory}
-
-          LATEST USER INPUT:
-          "${userText}"
-
-          Respond warmly to the latest input while remembering the context above.
-        `,
+        instruction: getConversationInstruction(currentSummary, convoHistory, userText),
       }),
     });
     console.log("Long-term summary sent to MERaLiON:\n", currentSummary, "\n-------------------");
@@ -161,12 +146,7 @@ export async function POST(request: Request) {
           headers: { "Content-Type": "application/json", "x-api-key": apiKey },
           body: JSON.stringify({
             key: s3Key,
-            instruction: `
-              Merge these new details into an accumulated summary. Keep it concise.
-              Make sure to preserve any important life facts about the user and their loved ones, as well as key personality traits and preferences that Memento has learned over time.
-              EXISTING SUMMARY: ${currentSummary}
-              NEW DETAILS TO ADD: ${oldestMessages}
-            `,
+            instruction: getSummarizationInstruction(currentSummary, oldestMessages),
           }),
         });
         const summaryData = await summaryResponse.json();
