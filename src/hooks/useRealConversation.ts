@@ -3,7 +3,7 @@
 // Data is lost on refresh, but allows for faster interactions without waiting for backend response every time
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useMicVAD, utils } from "@ricky0123/vad-react";
+import { MicVAD, utils } from "@ricky0123/vad-web";
 import { AvatarEvent } from "@/types/avatar";
 import { ConversationMessage } from "@/types/conversation";
 import { GREETING_TEXT } from "@/lib/mock-data";
@@ -33,6 +33,19 @@ export function useRealConversation({ dispatch }: UseRealConversationOptions) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioUrlRef = useRef<string | null>(null);
   const { language } = useLanguage();
+
+  // Lazy VAD instance (created on first mic press)
+  const vadRef = useRef<MicVAD | null>(null);
+  const vadInitializingRef = useRef(false);
+  const [vadListening, setVadListening] = useState(false);
+
+  // Refs for callbacks that the VAD needs (avoids stale closures)
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+  const summaryRef = useRef(summary);
+  summaryRef.current = summary;
+  const dispatchRef = useRef(dispatch);
+  dispatchRef.current = dispatch;
 
   const finishAssistantSpeech = useCallback(
     (kind: "greeting" | "speaking") => {
@@ -159,98 +172,149 @@ export function useRealConversation({ dispatch }: UseRealConversationOptions) {
     return () => clearTimeout(timer);
   }, [dispatch]);
 
-  const vad = useMicVAD({
-    startOnLoad: false,
-    redemptionMs: VAD_REDEMPTION_MS, // waiting time when user not speaking before cutting off mic
+  // Create the VAD instance lazily (only on first mic press)
+  const initVAD = useCallback(async () => {
+    if (vadRef.current || vadInitializingRef.current) return vadRef.current;
+    vadInitializingRef.current = true;
 
-    baseAssetPath: "https://cdn.jsdelivr.net/npm/@ricky0123/vad-web/dist/",
-    onnxWASMBasePath: "https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/",
+    try {
+      const instance = await MicVAD.new({
+        redemptionMs: VAD_REDEMPTION_MS,
 
-    onSpeechStart: () => {
-      playbackTokenRef.current += 1;
-      cleanupAudio();
-      completionModeRef.current = "bubble";
-      activeSpeechKindRef.current = null;
+        baseAssetPath: "https://cdn.jsdelivr.net/npm/@ricky0123/vad-web/dist/",
+        onnxWASMBasePath: "https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/",
 
-      // When user start talking, clear the output bubble and show listening state
-      setBubbleText("");
-      dispatch({ type: "START_LISTENING" });
-    },
+        onVADMisfire: () => {
+          console.log("[VAD] Misfire (false positive)");
+        },
 
-    onSpeechEnd: async (audio) => {
-      console.log("[VAD] Speech ended! Starting processing...");
-      vad.pause(); // pause microphone
-      // User stopped talking
-      dispatch({ type: "STOP_LISTENING" });
-      dispatch({ type: "START_THINKING" });
-      setBubbleText("..."); // SHOULD show three dots immediately
+        onSpeechStart: () => {
+          playbackTokenRef.current += 1;
+          // cleanup audio inline
+          const a = audioRef.current;
+          if (a) { a.pause(); a.src = ""; audioRef.current = null; }
+          if (audioUrlRef.current) { URL.revokeObjectURL(audioUrlRef.current); audioUrlRef.current = null; }
+          completionModeRef.current = "bubble";
+          activeSpeechKindRef.current = null;
 
-      try {
-        // Convert raw Float32Array audio into a WAV Blob
-        const wavBuffer = utils.encodeWAV(audio);
-        const audioBlob = new Blob([wavBuffer], { type: "audio/wav" });
+          setBubbleText("");
+          dispatchRef.current({ type: "START_LISTENING" });
+        },
 
-        // Package the Blob into FormData so we can send it over HTTP
-        const formData = new FormData();
-        formData.append("audio", audioBlob, "recording.wav");
-        formData.append("sessionId", sessionIdRef.current);
-        formData.append("history", JSON.stringify(messages)); // store entire convo history
-        formData.append("summary", summary); // send current summary to backend for context
+        onSpeechEnd: async (audio) => {
+          console.log("[VAD] Speech ended! Starting processing...");
+          vadRef.current?.pause();
+          setVadListening(false);
 
-        console.log("Sending audio, previous convo history, and summary to backend for processing...");
+          dispatchRef.current({ type: "STOP_LISTENING" });
+          dispatchRef.current({ type: "START_THINKING" });
+          setBubbleText("...");
 
-        // Send the POST request to your Next.js backend
-        const response = await fetch("/api/process-audio", {
-          method: "POST",
-          body: formData,
-        });
+          try {
+            const wavBuffer = utils.encodeWAV(audio);
+            const audioBlob = new Blob([wavBuffer], { type: "audio/wav" });
 
-        if (!response.ok) {
-          throw new Error(`Server responded with ${response.status}`);
-        }
+            const formData = new FormData();
+            formData.append("audio", audioBlob, "recording.wav");
+            formData.append("sessionId", sessionIdRef.current);
+            formData.append("history", JSON.stringify(messagesRef.current));
+            formData.append("summary", summaryRef.current);
 
-        const data = await response.json();
-        // extract specific fields
-        const userTranscript = data.userText;
-        const aiReply = data.aiText;
-        
-        // Update summary if provided by backend
-        if (data.summary) {
-          setSummary(data.summary);
-          localStorage.setItem("memento_summary", data.summary); // persist summary in LocalStorage
-          console.log("Updated summary received from backend:\n", data.summary, "\n-------------------");
-        }
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: nextMessageId(),
-            role: "user",
-            text: userTranscript,
-            timestamp: Date.now(),
-          },
-          {
-            id: nextMessageId(),
-            role: "assistant",
-            text: aiReply,
-            timestamp: Date.now() + 1,
-          },
-        ]);
+            console.log("Sending audio, previous convo history, and summary to backend for processing...");
 
-        setBubbleText(aiReply);
+            const response = await fetch("/api/process-audio", {
+              method: "POST",
+              body: formData,
+            });
 
-        // stop thinking and start speaking real text
-        dispatch({ type: "START_SPEAKING", text: aiReply});
-        void playAssistantAudio(aiReply, "speaking");
-      } catch (error) {
-        console.error("Server request failed", error);
-        setBubbleText(
-          "I'm sorry, I couldn't process your voice right now. Please try speaking again.",
-        );
-        dispatch({ type: "SPEAKING_DONE" }); // Reset the avatar
-      }
-    },
-  });
+            if (!response.ok) {
+              throw new Error(`Server responded with ${response.status}`);
+            }
 
+            const data = await response.json();
+            const userTranscript = data.userText;
+            const aiReply = data.aiText;
+
+            if (data.summary) {
+              setSummary(data.summary);
+              localStorage.setItem("memento_summary", data.summary);
+              console.log("Updated summary received from backend:\n", data.summary, "\n-------------------");
+            }
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: nextMessageId(),
+                role: "user",
+                text: userTranscript,
+                timestamp: Date.now(),
+              },
+              {
+                id: nextMessageId(),
+                role: "assistant",
+                text: aiReply,
+                timestamp: Date.now() + 1,
+              },
+            ]);
+
+            setBubbleText(aiReply);
+            dispatchRef.current({ type: "START_SPEAKING", text: aiReply });
+            // Play TTS - inline to avoid stale closure
+            activeSpeechKindRef.current = "speaking";
+            completionModeRef.current = "bubble";
+            const token = ++playbackTokenRef.current;
+            try {
+              const ttsResponse = await fetch("/api/tts", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ text: aiReply, language: "en" }),
+              });
+              if (ttsResponse.ok) {
+                const ttsBlob = await ttsResponse.blob();
+                if (ttsBlob.size && playbackTokenRef.current === token) {
+                  const url = URL.createObjectURL(ttsBlob);
+                  const el = new Audio(url);
+                  audioUrlRef.current = url;
+                  audioRef.current = el;
+                  completionModeRef.current = "audio";
+                  el.onended = () => {
+                    if (playbackTokenRef.current !== token) return;
+                    el.pause(); el.src = ""; audioRef.current = null;
+                    URL.revokeObjectURL(url); audioUrlRef.current = null;
+                    if (activeSpeechKindRef.current === "speaking") {
+                      activeSpeechKindRef.current = null;
+                      completionModeRef.current = "bubble";
+                      dispatchRef.current({ type: "SPEAKING_DONE" });
+                    }
+                  };
+                  el.onerror = () => {
+                    if (playbackTokenRef.current === token) completionModeRef.current = "bubble";
+                  };
+                  await el.play();
+                }
+              }
+            } catch (ttsErr) {
+              console.error("TTS playback failed", ttsErr);
+              completionModeRef.current = "bubble";
+            }
+          } catch (error) {
+            console.error("Server request failed", error);
+            setBubbleText(
+              "I'm sorry, I couldn't process your voice right now. Please try speaking again.",
+            );
+            dispatchRef.current({ type: "SPEAKING_DONE" });
+          }
+        },
+      });
+
+      vadRef.current = instance;
+      vadInitializingRef.current = false;
+      return instance;
+    } catch (error) {
+      vadInitializingRef.current = false;
+      console.error("Failed to initialize VAD:", error);
+      throw error;
+    }
+  }, []);
 
   const addAssistantMessage = useCallback((text: string) => {
     setMessages((prev) => [
@@ -266,7 +330,7 @@ export function useRealConversation({ dispatch }: UseRealConversationOptions) {
     dispatch({ type: "START_SPEAKING", text });
   }, [dispatch]);
 
-  const handleMicPress = useCallback(() => {
+  const handleMicPress = useCallback(async () => {
     if (
       !greetingPlaybackAttemptedRef.current &&
       activeSpeechKindRef.current === "greeting" &&
@@ -277,12 +341,29 @@ export function useRealConversation({ dispatch }: UseRealConversationOptions) {
       return;
     }
 
-    if (vad.listening) {
-      vad.pause();
-    } else {
-      vad.start(); // start browser mic
+    // If VAD is already running, pause it
+    if (vadRef.current && vadListening) {
+      vadRef.current.pause();
+      setVadListening(false);
+      return;
     }
-  }, [bubbleText, playAssistantAudio, vad]);
+
+    // Initialize VAD on first use, then start
+    try {
+      setBubbleText("Starting microphone...");
+      const vad = await initVAD();
+      if (vad) {
+        vad.start();
+        setVadListening(true);
+        setBubbleText("");
+      }
+    } catch (error) {
+      console.error("Microphone failed to start:", error);
+      setBubbleText("Microphone access is not available. Please allow microphone permissions and reload the page.");
+      dispatch({ type: "START_SPEAKING", text: "Microphone access is not available." });
+      setTimeout(() => dispatch({ type: "SPEAKING_DONE" }), 3000);
+    }
+  }, [bubbleText, playAssistantAudio, initVAD, vadListening, dispatch]);
 
   // Same cleanup callbacks so HomeScreen doesn't break
   const handleGreetingComplete = useCallback(() => {
@@ -317,9 +398,13 @@ export function useRealConversation({ dispatch }: UseRealConversationOptions) {
     }
   }, [finishAssistantSpeech]);
 
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
       cleanupAudio();
+      vadRef.current?.pause();
+      vadRef.current?.destroy();
+      vadRef.current = null;
     };
   }, [cleanupAudio]);
 
