@@ -27,3 +27,10 @@ export const THINKING_DURATION = 1500; // ms
 
 // The amount of silence (in milliseconds) to wait before the microphone cuts off.
 export const VAD_REDEMPTION_MS = 3000;
+
+// Choose avatar mode
+export const ACTIVE_MODELS = {
+  AUNTIE_V1: "/models/AuntieM.glb",
+  AUNTIE_V2: "/models/AuntieM1.glb",
+} as const;
+export const SELECTED_MODEL_URL = ACTIVE_MODELS.AUNTIE_V1; // Change this to switch models globally

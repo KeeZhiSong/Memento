@@ -6,6 +6,8 @@ import { useBackground } from "@/hooks/useBackground";
 import { Canvas } from "@react-three/fiber";
 import { Environment, OrbitControls } from "@react-three/drei";
 import Avatar from "@/components/Avatar"; 
+import { SELECTED_MODEL_URL } from "@/lib/constants";
+
 
 interface AvatarCompositeProps {
   state: AvatarState;
@@ -21,7 +23,7 @@ export default function AvatarComposite({
   const { background } = useBackground();
   
   // Define this here so the Canvas 'key' and the Avatar 'modelUrl' stay in sync
-  const modelUrl = "/models/AuntieM.glb";
+  const modelUrl = SELECTED_MODEL_URL;
 
   const isSpeaking = state === "speaking" || state === "greeting";
 
