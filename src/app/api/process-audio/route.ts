@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getConversationInstruction, getSummarizationInstruction } from "@/lib/prompts";
+import { getGuardrailResponse } from "@/lib/conversation-guardrails";
 const NUMBER_OF_MESSAGES_TO_KEEP = 10;
 const NUMBER_OF_TRANSCRIPT_RETRIES = 10;
 
@@ -39,6 +40,10 @@ function compileConvoHistory(history: ConversationMessage[]) {
     .slice(-NUMBER_OF_MESSAGES_TO_KEEP)
     .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.text}`)
     .join("\n");
+}
+
+function buildSummaryUpdateLog(userText: string, aiText: string) {
+  return `user: ${userText}\nassistant: ${aiText}`;
 }
 
 export async function POST(request: Request) {
@@ -110,6 +115,15 @@ export async function POST(request: Request) {
     }
 
     const convoHistory = compileConvoHistory(history);
+    const guardrailResponse = getGuardrailResponse(userText);
+    if (guardrailResponse) {
+      console.log("Guardrail triggered for input:", userText);
+      return NextResponse.json({
+        userText: userText,
+        aiText: guardrailResponse,
+        summary: currentSummary,
+      });
+    }
     // --- STEP 3: Process the AI Response ---
     const processResponse = await fetch("https://api.cr8lab.com/process", {
       method: "POST",
@@ -131,30 +145,23 @@ export async function POST(request: Request) {
 
     console.log("Number of messages in history:", history.length);
 
-    // If we have more than 10 messages in history, we want to summarize the oldest 5 and merge into the long-term summary
-    if (history.length > NUMBER_OF_MESSAGES_TO_KEEP) {
-      console.log("Archiving oldest 5 messages into Long-term Memory...");
-      const oldestMessages = history
-        .slice(0, 5)
-        .map((m) => `${m.role}: ${m.text}`)
-        .join("\n");
-      console.log("CONDENSING OLDEST 5 MESSAGES:\n", oldestMessages);
-
-      try {
-        const summaryResponse = await fetch("https://api.cr8lab.com/process", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-api-key": apiKey },
-          body: JSON.stringify({
-            key: s3Key,
-            instruction: getSummarizationInstruction(currentSummary, oldestMessages),
-          }),
-        });
-        const summaryData = await summaryResponse.json();
-        updatedSummary = summaryData.response.text;
-        console.log("Updated Summary:\n", updatedSummary, "\n-------------------");
-      } catch {
-        console.error("Summarization failed, keeping old summary.");
-      }
+    try {
+      const summaryResponse = await fetch("https://api.cr8lab.com/process", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": apiKey },
+        body: JSON.stringify({
+          key: s3Key,
+          instruction: getSummarizationInstruction(
+            currentSummary,
+            buildSummaryUpdateLog(userText, aiText),
+          ),
+        }),
+      });
+      const summaryData = await summaryResponse.json();
+      updatedSummary = summaryData.response.text;
+      console.log("Updated Summary:\n", updatedSummary, "\n-------------------");
+    } catch {
+      console.error("Summarization failed, keeping old summary.");
     }
 
     return NextResponse.json({

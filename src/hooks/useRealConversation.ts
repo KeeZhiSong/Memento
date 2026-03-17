@@ -47,6 +47,29 @@ export function useRealConversation({ dispatch }: UseRealConversationOptions) {
   const dispatchRef = useRef(dispatch);
   dispatchRef.current = dispatch;
 
+  const updateMessages = useCallback(
+    (
+      updater:
+        | ConversationMessage[]
+        | ((prev: ConversationMessage[]) => ConversationMessage[]),
+    ) => {
+      setMessages((prev) => {
+        const next =
+          typeof updater === "function"
+            ? (updater as (prev: ConversationMessage[]) => ConversationMessage[])(prev)
+            : updater;
+        messagesRef.current = next;
+        return next;
+      });
+    },
+    [],
+  );
+
+  const updateSummary = useCallback((nextSummary: string) => {
+    summaryRef.current = nextSummary;
+    setSummary(nextSummary);
+  }, []);
+
   const finishAssistantSpeech = useCallback(
     (kind: "greeting" | "speaking") => {
       if (activeSpeechKindRef.current !== kind) return;
@@ -146,8 +169,8 @@ export function useRealConversation({ dispatch }: UseRealConversationOptions) {
   // Load summary from LocalStorage on mount
   useEffect(() => {
     const savedSummary = localStorage.getItem("memento_summary");
-    if (savedSummary) setSummary(savedSummary);
-  }, []);
+    if (savedSummary) updateSummary(savedSummary);
+  }, [updateSummary]);
 
   // Greeting logic
   useEffect(() => {
@@ -156,7 +179,7 @@ export function useRealConversation({ dispatch }: UseRealConversationOptions) {
     greetingDone.current = true;
     const timer = setTimeout(() => {
       setBubbleText(GREETING_TEXT);
-      setMessages([
+      updateMessages([
         {
           id: nextMessageId(),
           role: "assistant",
@@ -170,7 +193,7 @@ export function useRealConversation({ dispatch }: UseRealConversationOptions) {
     }, 800); // 800 ms
 
     return () => clearTimeout(timer);
-  }, [dispatch]);
+  }, [dispatch, updateMessages]);
 
   // Create the VAD instance lazily (only on first mic press)
   const initVAD = useCallback(async () => {
@@ -220,7 +243,10 @@ export function useRealConversation({ dispatch }: UseRealConversationOptions) {
             formData.append("history", JSON.stringify(messagesRef.current));
             formData.append("summary", summaryRef.current);
 
-            console.log("Sending audio, previous convo history, and summary to backend for processing...");
+            console.log("Sending audio, previous convo history, and summary to backend for processing...", {
+              historyLength: messagesRef.current.length,
+              summary: summaryRef.current,
+            });
 
             const response = await fetch("/api/process-audio", {
               method: "POST",
@@ -236,11 +262,11 @@ export function useRealConversation({ dispatch }: UseRealConversationOptions) {
             const aiReply = data.aiText;
 
             if (data.summary) {
-              setSummary(data.summary);
+              updateSummary(data.summary);
               localStorage.setItem("memento_summary", data.summary);
               console.log("Updated summary received from backend:\n", data.summary, "\n-------------------");
             }
-            setMessages((prev) => [
+            updateMessages((prev) => [
               ...prev,
               {
                 id: nextMessageId(),
@@ -314,10 +340,10 @@ export function useRealConversation({ dispatch }: UseRealConversationOptions) {
       console.error("Failed to initialize VAD:", error);
       throw error;
     }
-  }, []);
+  }, [updateMessages, updateSummary]);
 
   const addAssistantMessage = useCallback((text: string) => {
-    setMessages((prev) => [
+    updateMessages((prev) => [
       ...prev,
       {
         id: nextMessageId(),
@@ -328,7 +354,7 @@ export function useRealConversation({ dispatch }: UseRealConversationOptions) {
     ]);
     setBubbleText(text);
     dispatch({ type: "START_SPEAKING", text });
-  }, [dispatch]);
+  }, [dispatch, updateMessages]);
 
   const handleMicPress = useCallback(async () => {
     if (

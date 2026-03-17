@@ -34,7 +34,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${nunito.variable} font-[family-name:var(--font-nunito)] antialiased`}>
+      <body
+        suppressHydrationWarning
+        className={`${nunito.variable} font-[family-name:var(--font-nunito)] antialiased`}
+      >
         {children}
       </body>
     </html>
