@@ -1,22 +1,33 @@
 "use client";
 
-import { ReactNode, useState } from "react";
+import { ReactNode, Suspense } from "react";
 import { AvatarState } from "@/types/avatar";
-import AvatarVideo from "./AvatarVideo";
 import { useBackground } from "@/hooks/useBackground";
+import { Canvas } from "@react-three/fiber";
+import { Environment, OrbitControls } from "@react-three/drei";
+import Avatar from "@/components/Avatar"; 
 
 interface AvatarCompositeProps {
   state: AvatarState;
   children?: ReactNode;
+  currentViseme?: string | null;
 }
 
-export default function AvatarComposite({ state, children }: AvatarCompositeProps) {
-  const [videoLoaded, setVideoLoaded] = useState(false);
+export default function AvatarComposite({
+  state,
+  children,
+  currentViseme
+}: AvatarCompositeProps) {
   const { background } = useBackground();
+  
+  // Define this here so the Canvas 'key' and the Avatar 'modelUrl' stay in sync
+  const modelUrl = "/models/AuntieM.glb";
+
+  const isSpeaking = state === "speaking" || state === "greeting";
 
   return (
     <div className="relative h-[100dvh] w-full overflow-hidden">
-      {/* Layer 0: Background image */}
+      {/* Layer 0: Background */}
       <picture className="absolute inset-0">
         <source srcSet={background.webp} type="image/webp" />
         <img
@@ -27,22 +38,43 @@ export default function AvatarComposite({ state, children }: AvatarCompositeProp
         />
       </picture>
 
-      {/* Vignette overlay for depth */}
-      <div className="vignette absolute inset-0" />
+      <div className="vignette absolute inset-0 z-10 pointer-events-none" />
 
-      {/* Layer 1: Avatar video with canvas chromakey */}
-      <div className="absolute inset-x-0 bottom-0 flex items-end justify-center h-[85%]">
-        <div
-          className={`h-full transition-opacity duration-700 ${
-            videoLoaded ? "opacity-100" : "opacity-0"
-          }`}
+      {/* Layer 1: 3D Stage */}
+      <div className="absolute inset-0 z-20">
+        <Canvas
+          key={modelUrl} // Correctly uses the variable now
+          camera={{ position: [0, 1.8, 1.8], fov: 30 }} 
+          shadows
+          gl={{ alpha: true, antialias: true }} 
         >
-          <AvatarVideo state={state} onLoad={() => setVideoLoaded(true)} />
-        </div>
+          {/* Lights stay outside Suspense so the scene is 'ready' */}
+          <ambientLight intensity={1.5} /> 
+          <spotLight position={[10, 10, 10]} angle={0.15} penumbra={1} intensity={2} />
+          <pointLight position={[-10, -10, -10]} intensity={1} />
+
+          <Suspense fallback={null}>
+            <Avatar
+              modelUrl={modelUrl}
+              currentViseme={currentViseme}
+              isSpeaking={isSpeaking}
+            />
+            {/* Environment provides realistic reflections on the skin/eyes */}
+            <Environment preset="city" /> 
+          </Suspense>
+
+          <OrbitControls
+            enableZoom={false}
+            enablePan={false}
+            // Lock rotation to only horizontal (left/right) so she stays upright
+            minPolarAngle={Math.PI / 2.2}
+            maxPolarAngle={Math.PI / 2.2}
+          />
+        </Canvas>
       </div>
 
-      {/* Layer 2: UI overlays */}
-      <div className="absolute inset-0 pointer-events-none">
+      {/* Layer 2: UI */}
+      <div className="absolute inset-0 z-30 pointer-events-none">
         <div className="pointer-events-auto h-full">{children}</div>
       </div>
     </div>

@@ -163,7 +163,7 @@ export async function POST(request: Request) {
     } catch {
       console.error("Summarization failed, keeping old summary.");
     }
-
+ 
     return NextResponse.json({
       userText: userText,
       aiText: aiText,
