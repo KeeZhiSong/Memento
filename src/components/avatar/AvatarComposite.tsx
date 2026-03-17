@@ -10,13 +10,13 @@ import Avatar from "@/components/Avatar";
 interface AvatarCompositeProps {
   state: AvatarState;
   children?: ReactNode;
-  analyser?: AnalyserNode | null;
+  currentViseme?: string | null;
 }
 
 export default function AvatarComposite({
   state,
   children,
-  analyser,
+  currentViseme
 }: AvatarCompositeProps) {
   const { background } = useBackground();
   
@@ -56,7 +56,7 @@ export default function AvatarComposite({
           <Suspense fallback={null}>
             <Avatar
               modelUrl={modelUrl}
-              analyser={analyser}
+              currentViseme={currentViseme}
               isSpeaking={isSpeaking}
             />
             {/* Environment provides realistic reflections on the skin/eyes */}

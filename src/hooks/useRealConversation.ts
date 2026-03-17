@@ -22,8 +22,9 @@ export function useRealConversation({ dispatch }: UseRealConversationOptions) {
   const [bubbleText, setBubbleText] = useState("");
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [summary, setSummary] = useState<string>("No summary yet.");
-  const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
   const [vadListening, setVadListening] = useState(false);
+  const [currentViseme, setCurrentViseme] = useState<string | null>(null);
+  const visemeTimeoutsRef = useRef<NodeJS.Timeout[]>([]);
 
   const greetingDone = useRef(false);
   const sessionIdRef = useRef(getOrCreateSessionId());
@@ -48,16 +49,17 @@ export function useRealConversation({ dispatch }: UseRealConversationOptions) {
   const dispatchRef = useRef(dispatch);
   dispatchRef.current = dispatch;
 
+  // Clean up audio resources and reset state after speech ends or on new speech start
   const cleanupAudio = useCallback(() => {
     if (activeSourceRef.current) {
       try {
         activeSourceRef.current.stop();
-      } catch (e) {
-        // Source might have already stopped
-      }
+      } catch (e) {}
       activeSourceRef.current = null;
     }
-    setAnalyser(null);
+    visemeTimeoutsRef.current.forEach(clearTimeout);
+    visemeTimeoutsRef.current = [];
+    setCurrentViseme(null);
   }, []);
 
   const finishAssistantSpeech = useCallback(
@@ -65,15 +67,16 @@ export function useRealConversation({ dispatch }: UseRealConversationOptions) {
       if (activeSpeechKindRef.current !== kind) return;
       activeSpeechKindRef.current = null;
       completionModeRef.current = "bubble";
-      dispatch({ type: kind === "greeting" ? "GREETING_DONE" : "SPEAKING_DONE" });
+      dispatch({
+        type: kind === "greeting" ? "GREETING_DONE" : "SPEAKING_DONE",
+      });
     },
-    [dispatch]
+    [dispatch],
   );
 
   const playAssistantAudio = useCallback(
     async (text: string, kind: "greeting" | "speaking") => {
       activeSpeechKindRef.current = kind;
-      completionModeRef.current = "bubble";
       const token = ++playbackTokenRef.current;
 
       try {
@@ -85,48 +88,56 @@ export function useRealConversation({ dispatch }: UseRealConversationOptions) {
           body: JSON.stringify({ text, language }),
         });
 
-        if (!response.ok) throw new Error("TTS fetch failed");
+        // --- IMPROVED ERROR LOGGING ---
+        if (!response.ok) {
+          const errorDetail = await response.text();
+          console.error("Backend Error Detail:", errorDetail);
+          throw new Error(`TTS failed: ${response.status}`);
+        }
 
-        const arrayBuffer = await response.arrayBuffer();
+        //Get JSON instead of ArrayBuffer
+        const data = await response.json();
+        const { audio, visemes } = data;
 
-        // Initialize AudioContext on user interaction path
-        const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
-        const ctx = audioCtxRef.current || new AudioContext();
-        audioCtxRef.current = ctx;
+        // Initialize Audio
+        const audioObj = new Audio(`data:audio/mpeg;base64,${audio}`);
 
-        if (ctx.state === "suspended") await ctx.resume();
-
-        const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
         if (playbackTokenRef.current !== token) return;
 
-        const source = ctx.createBufferSource();
-        const newAnalyser = ctx.createAnalyser();
-        newAnalyser.fftSize = 128;
+        if (visemes && visemes.character_start_times_seconds) {
+          visemes.character_start_times_seconds.forEach(
+            (startTime: number, index: number) => {
+              const timeout = setTimeout(() => {
+                if (playbackTokenRef.current === token) {
+                  console.log("Viseme fired:", visemes.characters[index]);
+                  // We send the single character to the Avatar
+                  setCurrentViseme(visemes.characters[index]);
+                }
+                setTimeout(() => {
+                  if (playbackTokenRef.current === token) {
+                    setCurrentViseme(null);
+                  }
+                }, 120); // ~120ms open window per viseme
+              }, startTime * 1000);
+              visemeTimeoutsRef.current.push(timeout);
+            },
+          );
+        }
 
-        source.buffer = audioBuffer;
-        source.connect(newAnalyser);
-        newAnalyser.connect(ctx.destination);
-
-        activeSourceRef.current = source;
-        setAnalyser(newAnalyser);
+        audioObj.play();
         completionModeRef.current = "audio";
 
-        source.start(0);
-
-        source.onended = () => {
+        audioObj.onended = () => {
           if (playbackTokenRef.current !== token) return;
           cleanupAudio();
           finishAssistantSpeech(kind);
         };
       } catch (error) {
         console.error("Playback failed", error);
-        // Fallback to bubble-only if audio fails
-        completionModeRef.current = "bubble";
-        // Manual trigger for bubble timeout if no audio plays
-        setTimeout(() => finishAssistantSpeech(kind), 3000);
+        finishAssistantSpeech(kind);
       }
     },
-    [cleanupAudio, finishAssistantSpeech, language]
+    [cleanupAudio, finishAssistantSpeech, language],
   );
 
   const initVAD = useCallback(async () => {
@@ -175,8 +186,18 @@ export function useRealConversation({ dispatch }: UseRealConversationOptions) {
 
             setMessages((prev) => [
               ...prev,
-              { id: nextMessageId(), role: "user", text: data.userText, timestamp: Date.now() },
-              { id: nextMessageId(), role: "assistant", text: data.aiText, timestamp: Date.now() + 1 },
+              {
+                id: nextMessageId(),
+                role: "user",
+                text: data.userText,
+                timestamp: Date.now(),
+              },
+              {
+                id: nextMessageId(),
+                role: "assistant",
+                text: data.aiText,
+                timestamp: Date.now() + 1,
+              },
             ]);
 
             setBubbleText(data.aiText);
@@ -207,7 +228,14 @@ export function useRealConversation({ dispatch }: UseRealConversationOptions) {
     greetingDone.current = true;
     setTimeout(() => {
       setBubbleText(GREETING_TEXT);
-      setMessages([{ id: nextMessageId(), role: "assistant", text: GREETING_TEXT, timestamp: Date.now() }]);
+      setMessages([
+        {
+          id: nextMessageId(),
+          role: "assistant",
+          text: GREETING_TEXT,
+          timestamp: Date.now(),
+        },
+      ]);
       dispatch({ type: "START_GREETING" });
       activeSpeechKindRef.current = "greeting";
     }, 800);
@@ -219,7 +247,10 @@ export function useRealConversation({ dispatch }: UseRealConversationOptions) {
       await audioCtxRef.current.resume();
     }
 
-    if (!greetingPlaybackAttemptedRef.current && activeSpeechKindRef.current === "greeting") {
+    if (
+      !greetingPlaybackAttemptedRef.current &&
+      activeSpeechKindRef.current === "greeting"
+    ) {
       greetingPlaybackAttemptedRef.current = true;
       playAssistantAudio(GREETING_TEXT, "greeting");
       return;
@@ -255,16 +286,22 @@ export function useRealConversation({ dispatch }: UseRealConversationOptions) {
     handleMicPress,
     handleGreetingComplete: () => {
       // Logic for non-audio fallback
-      if (completionModeRef.current === "bubble" && activeSpeechKindRef.current === "greeting") {
+      if (
+        completionModeRef.current === "bubble" &&
+        activeSpeechKindRef.current === "greeting"
+      ) {
         setTimeout(() => finishAssistantSpeech("greeting"), 2000);
       }
     },
     handleSpeakingComplete: () => {
       // Logic for non-audio fallback
-      if (completionModeRef.current === "bubble" && activeSpeechKindRef.current === "speaking") {
+      if (
+        completionModeRef.current === "bubble" &&
+        activeSpeechKindRef.current === "speaking"
+      ) {
         setTimeout(() => finishAssistantSpeech("speaking"), 2000);
       }
     },
-    analyser,
+    currentViseme,
   };
 }

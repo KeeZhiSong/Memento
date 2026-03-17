@@ -19,7 +19,7 @@ export default function HomeScreen() {
     handleMicPress,
     handleGreetingComplete,
     handleSpeakingComplete,
-    analyser
+    currentViseme
   } = useRealConversation({ dispatch });
 
   const micDisabled = state !== "idle" && state !== "greeting";
@@ -33,7 +33,7 @@ export default function HomeScreen() {
   };
 
   return (
-    <AvatarComposite state={state} analyser={analyser ?? undefined}>
+    <AvatarComposite state={state} currentViseme={currentViseme}>
       <ChatBubbleOverlay
         state={state}
         text={bubbleText}
