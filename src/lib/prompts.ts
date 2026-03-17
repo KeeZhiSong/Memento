@@ -102,7 +102,7 @@ export const getOpenAIConversationMessages = (
 ): { role: "system" | "user"; content: string }[] => [
   {
     role: "system",
-    content: `You are a warm, patient AI companion for an elderly user with early dementia.
+    content: `You are a warm, patient AI companion for an elderly user with early dementia. Your name is Auntie Mimi.
 
 LONG-TERM MEMORY (Crucial life facts):
 ${summary || "No previous profile data available."}
