@@ -156,7 +156,6 @@ export default function DashboardPage() {
     message.createdAt.startsWith(today)
   ).length;
   const engagementPercent = Math.min(100, todayConversationCount * 20);
-  const attentionItems = notifications.length + (isMoodLow && isMoodToday ? 1 : 0);
 
   const todayEvents = schedule.filter((e) => e.date === today);
 
@@ -229,7 +228,7 @@ export default function DashboardPage() {
         </div>
 
         <div className="glass-heavy rounded-2xl p-5">
-          <div className="mb-4 flex items-start justify-between gap-3">
+          <div className="mb-4">
             <div>
               <p className="text-xs font-bold uppercase tracking-[0.2em] text-navy/40">
                 Analytics
@@ -240,12 +239,6 @@ export default function DashboardPage() {
               <p className="mt-1 text-sm text-navy/55">
                 A quick caretaker snapshot of mood, medication, and engagement.
               </p>
-            </div>
-            <div className="rounded-2xl bg-white/45 px-3 py-2 text-right">
-              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-navy/35">
-                Attention
-              </p>
-              <p className="text-2xl font-bold text-navy">{attentionItems}</p>
             </div>
           </div>
 
