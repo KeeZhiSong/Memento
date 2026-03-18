@@ -26,7 +26,10 @@ export default function TopNavBar() {
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 safe-top">
-      <div className="glass mx-3 mt-2 rounded-2xl px-2 py-1.5 flex items-center justify-around">
+      <div
+        className="mx-3 mt-2 flex items-center justify-around rounded-2xl border border-white/60 px-2 py-1.5 shadow-lg backdrop-blur-xl"
+        style={{ background: "rgba(255, 255, 255, 0.55)" }}
+      >
         {tabs.map((tab) => {
           const isActive = pathname === tab.href || pathname.startsWith(tab.href + "/");
           const showBadge = tab.id === "dashboard" && count > 0;
@@ -36,8 +39,8 @@ export default function TopNavBar() {
               href={tab.href}
               className={`relative flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl min-w-[48px] min-h-[48px] justify-center transition-colors ${
                 isActive
-                  ? "text-teal bg-white/30"
-                  : "text-navy/60 hover:text-navy"
+                  ? "bg-white/70 text-navy"
+                  : "text-navy/75 hover:text-navy"
               }`}
             >
               <NavIcon icon={tab.icon} className="w-5 h-5" />

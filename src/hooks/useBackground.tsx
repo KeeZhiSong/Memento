@@ -25,6 +25,8 @@ export const BACKGROUNDS: BackgroundOption[] = [
 ];
 
 const STORAGE_KEY = "memento-background";
+const DEFAULT_BACKGROUND =
+  BACKGROUNDS.find((background) => background.id === "playground") ?? BACKGROUNDS[0];
 
 interface BackgroundContextValue {
   background: BackgroundOption;
@@ -32,12 +34,12 @@ interface BackgroundContextValue {
 }
 
 const BackgroundContext = createContext<BackgroundContextValue>({
-  background: BACKGROUNDS[0],
+  background: DEFAULT_BACKGROUND,
   setBackground: () => {},
 });
 
 export function BackgroundProvider({ children }: { children: ReactNode }) {
-  const [background, setBackgroundState] = useState<BackgroundOption>(BACKGROUNDS[0]);
+  const [background, setBackgroundState] = useState<BackgroundOption>(DEFAULT_BACKGROUND);
 
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
